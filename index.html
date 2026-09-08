@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- fundal in straturi: glow albastru sus, grila discreta -->
+<div class="bg-layers" aria-hidden="true">
+  <div class="bg-glow"></div>
+  <div class="bg-grid"></div>
+</div>
+
+<!-- ---------------- cont ---------------- -->
+<div class="auth-screen" id="authScreen" hidden>
+  <form class="auth-card" id="authForm">
+    <div class="auth-brand"><span class="logo-mark">TJ</span> Trading Journal</div>
+    <h1 id="authTitle">Create your account</h1>
+    <p class="auth-sub" id="authSub">Your journal is locked to this device.</p>
+
+    <label class="field">Email<input type="email" id="authEmail" autocomplete="username" placeholder="you@example.com" required></label>
+    <label class="field">Password<input type="password" id="authPw" autocomplete="current-password" placeholder="At least 8 characters" required></label>
+    <label class="field" id="authConfirmWrap">Confirm password<input type="password" id="authPw2" autocomplete="new-password"></label>
+    <label class="check"><input type="checkbox" id="authShow"> Show password</label>
+
+    <p class="err" id="authErr"></p>
+    <button type="submit" class="btn primary wide" id="authBtn">Create account</button>
+    <p class="auth-foot" id="authFoot"></p>
+    <p class="auth-note">Everything stays in this browser — no server, no sync. Clearing your site data wipes it.</p>
+  </form>
+</div>
+
+<nav class="nav" hidden>
+  <div class="nav-inner">
+    <a class="logo" href="#"><span class="logo-mark">TJ</span> Trading Journal</a>
+    <div class="nav-tabs">
+      <a href="#dashboard" data-route="dashboard" class="on">Dashboard</a>
+      <a href="#trades" data-route="trades">Trades</a>
+      <a href="#strategy" data-route="strategy">Strategy</a>
+      <a href="#calendar" data-route="calendar">Calendar</a>
+      <a href="#accounts" data-route="accounts">Accounts</a>
+    </div>
+    <span class="user-chip" id="userChip" hidden>
+      <span id="userEmail"></span>
+      <button type="button" class="btn ghost icon" id="signOutBtn">Sign out</button>
+    </span>
+    <select id="currency" title="Account currency" style="width:auto">
+      <option value="USD">USD $</option>
+      <option value="EUR">EUR €</option>
+      <option value="RON">RON lei</option>
+      <option value="GBP">GBP £</option>
+    </select>
+    <button class="btn ghost icon" id="themeBtn" title="Toggle theme">Light</button>
+    <button class="btn primary" id="addBtn">+ Add trade</button>
+  </div>
+</nav>
+
+<div class="wrap" hidden>
+
+  <!-- ---------------- ceas + timeline sesiuni ---------------- -->
+  <section class="card hero">
+    <div class="hero-clock">
+      <div id="clockTime">--:--:--</div>
+      <div id="clockDate"></div>
+      <div id="clockZone"></div>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-head">
+        <span id="openNow">—</span>
+        <span class="next" id="nextEvent"></span>
+      </div>
+      <div class="tl-body" id="tlBody">
+        <div class="tl-overlay">
+          <div class="tl-past" id="tlPast"></div>
+          <div class="tl-now" id="tlNow"></div>
+        </div>
+      </div>
+      <div class="tl-axis" id="tlAxis"></div>
+    </div>
+  </section>
+
+  <div class="view" id="view-dashboard">
+
+  <!-- ---------------- KPI ---------------- -->
+  <div class="section-head">
+    <h2>Overview</h2>
+    <div class="seg" id="scopeSeg">
+      <button data-scope="today">Today</button>
+      <button data-scope="month" class="on">This Month</button>
+      <button data-scope="all">All Time</button>
+    </div>
+  </div>
+
+  <section class="kpis">
+    <div class="card kpi" id="cardToday">
+      <div class="k">Today's P&amp;L</div>
+      <div class="v" id="pnlToday">—</div>
+      <div class="sub" id="pnlTodaySub">No trades today</div>
+    </div>
+
+    <div class="card kpi" id="cardMonth">
+      <div class="k">This Month's P&amp;L</div>
+      <div class="v" id="pnlMonth">—</div>
+      <div class="sub" id="pnlMonthSub">No trades this month</div>
+    </div>
+
+    <div class="card kpi neutral">
+      <div class="k">Win Rate <span class="muted" id="wrScope">this month</span></div>
+      <div class="kpi-ring">
+        <div class="ring">
+          <svg width="76" height="76" viewBox="0 0 76 76">
+            <circle class="ring-track" cx="38" cy="38" r="32" fill="none" stroke-width="7"></circle>
+            <circle class="ring-arc" id="ringArc" cx="38" cy="38" r="32" fill="none"
+                    stroke-width="7" stroke-linecap="round" stroke-dasharray="0 201"></circle>
+          </svg>
+          <div class="ring-label" id="wrValue">—</div>
+        </div>
+        <div class="ring-side">
+          <div><b id="wrWins">0</b> won</div>
+          <div><b id="wrLosses">0</b> lost</div>
+          <div class="muted" id="wrNote">BE included</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card kpi neutral">
+      <div class="k">Trades Taken <span class="muted" id="tcScope">this month</span></div>
+      <div class="v sm" id="tradeCount">0</div>
+      <div class="prop">
+        <i class="p-tp" id="propTP" style="width:0%"></i>
+        <i class="p-sl" id="propSL" style="width:0%"></i>
+        <i class="p-be" id="propBE" style="width:0%"></i>
+      </div>
+      <div class="outcomes">
+        <div class="outcome tp"><span class="n" id="cntTP">0</span><span class="l">TP</span></div>
+        <div class="outcome sl"><span class="n" id="cntSL">0</span><span class="l">SL</span></div>
+        <div class="outcome be"><span class="n" id="cntBE">0</span><span class="l">BE</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- P&L pe zile ---------------- -->
+  <div class="section-head"><h2>Daily performance</h2></div>
+  <section class="card" id="dailyCard">
+    <div class="card-head">
+      <div>
+        <h3>Profit &amp; loss by day</h3>
+        <p class="caption" id="dailyCaption">Last 14 days</p>
+      </div>
+      <div class="caption" id="dailyTotal"></div>
+    </div>
+    <div id="dailyWrap"><svg class="chart" id="dailyChart"></svg></div>
+    <div class="tooltip" id="dailyTip"></div>
+  </section>
+
+  <!-- ---------------- tabel ---------------- -->
+  <div class="section-head"><h2>Journal</h2></div>
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h3>Trades</h3>
+        <p class="caption" id="listCaption">Nothing logged yet.</p>
+      </div>
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="Search pair, session, reason…">
+        <div class="seg" id="outcomeFilter">
+          <button data-filter="" class="on">All</button>
+          <button data-filter="TP">TP</button>
+          <button data-filter="SL">SL</button>
+          <button data-filter="BE">BE</button>
+        </div>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="l">Date</th>
+            <th class="l">Pair</th>
+            <th class="l">Side</th>
+            <th class="l">Session</th>
+            <th class="l">Account</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>Lots</th>
+            <th class="l">Reason</th>
+            <th class="l">Result</th>
+            <th>P&amp;L</th>
+            <th>R</th>
+            <th class="l">Img</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="tableEmpty"><b>No trades yet</b>Add your first one and the numbers above start filling in.</p>
+  </section>
+
+  </div><!-- /view-dashboard -->
+
+  <!-- ============================ TRADES ============================ -->
+  <div class="view" id="view-trades" hidden>
+    <div class="section-head"><h2>Trades by pair</h2></div>
+    <section class="kpis two">
+      <div class="card kpi neutral">
+        <div class="k">Trades this month</div>
+        <div class="v" id="tvMonth">0</div>
+        <div class="sub" id="tvMonthSub">No trades this month</div>
+      </div>
+      <div class="card kpi neutral">
+        <div class="k">Trades all time</div>
+        <div class="v" id="tvAll">0</div>
+        <div class="sub" id="tvAllSub">Nothing logged yet</div>
+        <div class="sub muted" id="tvSince"></div>
+      </div>
+    </section>
+<section class="card">
+      <div class="card-head">
+        <div>
+          <h3>By pair</h3>
+          <p class="caption">Every pair you trade. Win rate counts BE as a non-win.</p>
+        </div>
+        <div class="seg" id="pairScope">
+          <button data-scope="all" class="on">All time</button>
+          <button data-scope="month">This month</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="bd">
+          <thead>
+            <tr>
+              <th class="l">Pair</th>
+              <th class="l">Split</th>
+              <th>TP</th>
+              <th>SL</th>
+              <th>BE</th>
+              <th>Win</th>
+              <th>Net</th>
+            </tr>
+          </thead>
+          <tbody id="pairRows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="pairEmpty" hidden><b>Nothing yet</b>Log a trade and your pairs show up here.</p>
+    </section>
+
+      </div><!-- /view-trades -->
+
+  <!-- ============================ STRATEGY ============================ -->
+  <div class="view" id="view-strategy" hidden>
+    <div class="section-head"><h2>Strategy</h2></div>
+    <section class="kpis two">
+      <div class="card kpi neutral">
+        <div class="k">Trades this month</div>
+        <div class="v" id="svMonth">0</div>
+        <div class="sub" id="svMonthSub">No trades this month</div>
+      </div>
+      <div class="card kpi neutral">
+        <div class="k">Trades all time</div>
+        <div class="v" id="svAll">0</div>
+        <div class="sub" id="svAllSub">Nothing logged yet</div>
+        <div class="sub muted" id="svSince"></div>
+      </div>
+    </section>
+<section class="card">
+      <div class="card-head">
+        <div>
+          <h3>By setup</h3>
+          <p class="caption">What made me enter. A trade with several reasons counts under each one.</p>
+        </div>
+        <div class="seg" id="reasonScope">
+          <button data-scope="all" class="on">All time</button>
+          <button data-scope="month">This month</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="bd">
+          <thead>
+            <tr>
+              <th class="l">Reason</th>
+              <th class="l">Split</th>
+              <th>TP</th>
+              <th>SL</th>
+              <th>BE</th>
+              <th>Win</th>
+              <th>Net</th>
+            </tr>
+          </thead>
+          <tbody id="reasonRows"></tbody>
+        </table>
+      </div>
+    </section>
+    </div><!-- /view-strategy -->
+
+  <!-- ============================ CALENDAR ============================ -->
+  <div class="view" id="view-calendar" hidden>
+    <div class="section-head">
+      <h2>Calendar</h2>
+      <div class="cal-nav">
+        <button class="btn icon" id="calPrev" title="Previous month">‹</button>
+        <span class="cal-label" id="calLabel">—</span>
+        <button class="btn icon" id="calNext" title="Next month">›</button>
+        <button class="btn icon" id="calToday">Today</button>
+      </div>
+    </div>
+
+    <section class="kpis three">
+      <div class="card kpi" id="calPnlCard">
+        <div class="k">Month P&amp;L</div>
+        <div class="v" id="calPnl">—</div>
+        <div class="sub" id="calPnlSub">No trades this month</div>
+      </div>
+      <div class="card kpi neutral">
+        <div class="k">Trades</div>
+        <div class="v sm" id="calTrades">0</div>
+        <div class="sub" id="calTradesSub">—</div>
+      </div>
+      <div class="card kpi neutral">
+        <div class="k">Trading days</div>
+        <div class="v sm" id="calDays">0</div>
+        <div class="sub" id="calDaysSub">—</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cal-legend">
+        <span><i class="sw win"></i>Winning day</span>
+        <span><i class="sw loss"></i>Losing day</span>
+        <span><i class="sw flat"></i>Break even</span>
+        <span><i class="sw today"></i>Today</span>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+    </section>
+
+    <section class="card" id="calDayCard" hidden>
+      <div class="card-head">
+        <div>
+          <h3 id="calDayTitle">—</h3>
+          <p class="caption" id="calDaySub"></p>
+        </div>
+        <button class="btn ghost icon" id="calDayClose">Close</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th class="l">Time</th>
+              <th class="l">Pair</th>
+              <th class="l">Side</th>
+              <th class="l">Session</th>
+              <th class="l">Reason</th>
+              <th class="l">Result</th>
+              <th>P&amp;L</th>
+              <th>R</th>
+            </tr>
+          </thead>
+          <tbody id="calDayRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div><!-- /view-calendar -->
+
+  <!-- ============================ ACCOUNTS ============================ -->
+  <!-- Banii se tin doar aici: un trade de pe un cont de prop firm are suma,
+       unul din jurnalul personal nu are deloc. -->
+  <div class="view" id="view-accounts" hidden>
+
+    <!-- lista de conturi -->
+    <div id="acctList">
+      <div class="section-head">
+        <h2>Accounts</h2>
+        <button class="btn primary" id="addAcctBtn">+ Add prop-firm account</button>
+      </div>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h3>Your prop-firm accounts</h3>
+            <p class="caption">Open one to log the trades you took on it, with the money won or lost.</p>
+          </div>
+        </div>
+        <div class="acct-grid" id="acctGrid"></div>
+        <p class="empty" id="acctEmpty"><b>No accounts yet</b>Add your first prop-firm account and log its trades with the amounts.</p>
+      </section>
+
+      <section class="card" id="backupCard">
+        <div class="card-head">
+          <div>
+            <h3>Backup &amp; transfer</h3>
+            <p class="caption">Your journal is stored in this browser only. Export a file to keep a backup,
+              or to carry everything over to another browser, computer or phone.</p>
+          </div>
+          <div class="acct-actions">
+            <button type="button" class="btn ghost icon" id="importBtn">Import from file</button>
+            <button type="button" class="btn primary" id="exportBtn">Export backup</button>
+          </div>
+        </div>
+        <p class="caption" id="backupInfo">Nothing to export yet.</p>
+        <p class="err" id="backupErr" hidden></p>
+        <p class="caption"><button type="button" class="linky" id="copyBtn">Or show the backup as text, to copy by hand</button></p>
+        <div class="backup-text" id="backupText" hidden>
+          <textarea id="backupJson" readonly spellcheck="false" rows="8"></textarea>
+          <div class="acct-actions">
+            <button type="button" class="btn ghost icon" id="copyNowBtn">Copy to clipboard</button>
+            <button type="button" class="btn ghost icon" id="copyCloseBtn">Close</button>
+            <span class="caption" id="copyMsg"></span>
+          </div>
+        </div>
+        <p class="hint">The file holds your accounts, trades and preferences &mdash; not your password.
+          On a new device create the account first, then import.</p>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </section>
+    </div>
+
+    <!-- un cont deschis -->
+    <div id="acctDetail" hidden>
+      <div class="section-head">
+        <h2 id="acctTitle">—</h2>
+        <div class="acct-actions">
+          <button class="btn ghost icon" id="acctBack">‹ All accounts</button>
+          <button class="btn ghost icon" id="acctEdit">Edit account</button>
+          <button class="btn primary" id="acctAddTrade">+ Add trade</button>
+        </div>
+      </div>
+
+      <section class="kpis">
+        <div class="card kpi" id="acctBalanceCard">
+          <div class="k">Balance</div>
+          <div class="v" id="acctBalance">—</div>
+          <div class="sub" id="acctBalanceSub">—</div>
+        </div>
+        <div class="card kpi" id="acctPnlCard">
+          <div class="k">Account P&amp;L</div>
+          <div class="v sm" id="acctPnl">—</div>
+          <div class="sub" id="acctPnlSub">No trades yet</div>
+        </div>
+        <div class="card kpi neutral">
+          <div class="k">Win rate</div>
+          <div class="v sm" id="acctWr">—</div>
+          <div class="sub" id="acctWrSub">BE included</div>
+        </div>
+        <div class="card kpi neutral">
+          <div class="k">Trades</div>
+          <div class="v sm" id="acctTrades">0</div>
+          <div class="sub" id="acctTradesSub">—</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h3>Trades on this account</h3>
+            <p class="caption" id="acctCaption">Nothing logged yet.</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="l">Date</th>
+                <th class="l">Pair</th>
+                <th class="l">Side</th>
+                <th class="l">Session</th>
+                <th>Entry</th>
+                <th>Exit</th>
+                <th>Lots</th>
+                <th class="l">Reason</th>
+                <th class="l">Result</th>
+                <th>P&amp;L</th>
+                <th>R</th>
+                <th class="l">Img</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="acctRows"></tbody>
+          </table>
+        </div>
+        <p class="empty" id="acctRowsEmpty"><b>No trades on this account</b>Add one and the P&amp;L above starts filling in.</p>
+      </section>
+    </div>
+
+  </div><!-- /view-accounts -->
+
+</div>
+
+<!-- ---------------- add / edit trade ---------------- -->
+<div class="modal-back" id="modalBack">
+  <form class="modal" id="tradeForm">
+    <div class="modal-title">
+      <h2 id="modalTitle">Add trade</h2>
+      <span class="caption" id="modalHint">Fields marked * are required</span>
+    </div>
+    <p class="modal-acct" id="modalAcct"></p>
+
+    <div class="modal-body">
+      <div class="fs">
+        <div class="fs-title"><span class="step">1</span> The trade</div>
+        <div class="form-grid">
+          <label class="field">Date *<input type="date" id="mDate" required></label>
+          <label class="field">Pair *<input type="text" id="mPair" placeholder="EURUSD" list="pairList" required></label>
+          <label class="field">Session<select id="mSession"></select></label>
+          <label class="field full">Direction *
+            <div class="choice" id="mSide">
+              <button type="button" data-side="Long" class="long">LONG</button>
+              <button type="button" data-side="Short" class="short">SHORT</button>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">2</span> Entry</div>
+        <div class="form-grid">
+          <label class="field">Entry price *<input type="number" id="mEntry" step="any" required></label>
+          <label class="field">Entry time<input type="time" id="mEntryTime"></label>
+          <label class="field">Lots<input type="number" id="mLots" step="any" min="0" placeholder="optional"></label>
+        </div>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">3</span> Exit</div>
+        <div class="form-grid">
+          <label class="field">Exit price<input type="number" id="mExit" step="any"></label>
+          <label class="field">Exit time<input type="time" id="mExitTime"></label>
+          <label class="field">Time in trade<input type="text" id="mDuration" readonly placeholder="—"></label>
+        </div>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">4</span> What made me enter</div>
+        <div class="chips" id="mReasons">
+          <button type="button" data-reason="HOFD">HOFD</button>
+          <button type="button" data-reason="LOFD">LOFD</button>
+          <button type="button" data-reason="Liq Locala">Liq Locala</button>
+          <button type="button" data-reason="Liq Majora">Liq Majora</button>
+          <button type="button" data-reason="Liq Minora">Liq Minora</button>
+        </div>
+        <p class="hint">Pick as many as apply.</p>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">5</span> Result</div>
+        <div class="choice" id="mOutcome">
+          <button type="button" data-outcome="TP" class="tp">TP</button>
+          <button type="button" data-outcome="SL" class="sl">SL</button>
+          <button type="button" data-outcome="BE" class="be">BE</button>
+        </div>
+      </div>
+
+      <!-- pasul cu banii apare doar la trade-urile de pe un cont de prop firm -->
+      <div class="fs" id="fsMoney">
+        <div class="fs-title"><span class="step">6</span> Money won or lost on this position</div>
+        <div class="money-row">
+          <label class="field">Amount *
+            <div class="money-field">
+              <span class="cur" id="mCurSign">$</span>
+              <input type="number" id="mPnl" step="any" placeholder="0.00">
+            </div>
+          </label>
+          <label class="field">R multiple<input type="number" id="mR" step="any" placeholder="e.g. 2 or -1"></label>
+        </div>
+        <p class="pnl-preview" id="mPnlPreview">Type a plain number for a win, a minus for a loss — e.g. 250 or −120.</p>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">7</span> Extra details</div>
+        <textarea id="mNotes" rows="3" placeholder="Anything you want to remember: how you managed it, what you'd do differently."></textarea>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">8</span> Chart image</div>
+        <div class="img-row">
+          <button type="button" class="btn" id="mImagePick">Upload image</button>
+          <input type="file" id="mImageFile" accept="image/*" hidden>
+          <input type="url" id="mImageUrl" placeholder="…or paste an image link">
+        </div>
+        <p class="hint">You can also paste a screenshot straight into this form with Cmd+V.</p>
+        <div class="img-preview" id="mImagePreview" hidden>
+          <img id="mImageThumb" alt="Trade screenshot">
+          <button type="button" class="btn danger icon" id="mImageClear">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn danger left" id="deleteBtn" hidden>Delete trade</button>
+      <p class="err" id="formErr"></p>
+      <button type="button" class="btn ghost" id="cancelBtn">Cancel</button>
+      <button type="submit" class="btn primary">Save trade</button>
+    </div>
+    <datalist id="pairList"></datalist>
+  </form>
+</div>
+
+<!-- ---------------- add / edit prop-firm account ---------------- -->
+<div class="modal-back" id="acctModalBack">
+  <form class="modal narrow" id="acctForm">
+    <div class="modal-title">
+      <h2 id="acctModalTitle">Add prop-firm account</h2>
+      <span class="caption">Trades logged here carry the money amount</span>
+    </div>
+
+    <div class="modal-body">
+      <div class="fs">
+        <div class="fs-title"><span class="step">1</span> Which firm</div>
+        <label class="field">Account name *<input type="text" id="aName" placeholder="FTMO Challenge" required></label>
+      </div>
+
+      <div class="fs">
+        <div class="fs-title"><span class="step">2</span> Account size</div>
+        <div class="chips" id="aSize">
+          <button type="button" data-size="10000">10k</button>
+          <button type="button" data-size="25000">25k</button>
+          <button type="button" data-size="50000">50k</button>
+          <button type="button" data-size="100000">100k</button>
+          <button type="button" data-size="200000">200k</button>
+        </div>
+        <p class="hint">Used to work out what your P&amp;L is worth as a percentage of the account.</p>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn danger left" id="acctDeleteBtn" hidden>Delete account</button>
+      <p class="err" id="acctErr"></p>
+      <button type="button" class="btn ghost" id="acctCancelBtn">Cancel</button>
+      <button type="submit" class="btn primary">Save account</button>
+    </div>
+  </form>
+</div>
+
+<div class="lightbox" id="lightbox"><img id="lightboxImg" alt="Trade screenshot"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

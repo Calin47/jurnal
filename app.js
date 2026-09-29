@@ -100,14 +100,25 @@ const isFunded = t => !!t.accountId;
 function saveTrades() {
   try {
     localStorage.setItem(TRADES_KEY, JSON.stringify(trades));
-    return true;
   } catch (e) {
-    return false;
+    /* localStorage plin (de obicei o poza prea mare). In mod local asta e o
+       eroare adevarata; cu server, memoria locala e doar o copie, deci mergem
+       inainte si lasam serverul sa tina datele. */
+    if (!cloudOn() || !cloudUser) return false;
   }
+  queueCloudSave();
+  return true;
 }
 
-const saveSettings = () => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-const saveAccounts = () => localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+const saveSettings = () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  queueCloudSave();
+};
+
+const saveAccounts = () => {
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  queueCloudSave();
+};
 
 /* ---------------------------------------------------------------- backup
 
@@ -312,6 +323,317 @@ function importBackupFile(file) {
   });
 }
 
+/* ------------------------------------------------------------------- server
+
+   Conturi si sincronizare, peste Supabase. Sta in acelasi fisier cu restul
+   aplicatiei ca sa nu existe un al doilea fisier fara care aplicatia se rupe:
+   daca `cloud-config.js` lipseste sau e gol, `cloudOn()` da false si tot ce e
+   aici sta deoparte, iar jurnalul traieste in localStorage ca inainte.
+
+   Cand e pornit:
+     - cont adevarat (email + parola), acelasi pe orice dispozitiv
+     - jurnalul stat pe server, cu localStorage doar ca memorie locala rapida
+     - scrierile pleaca grupate, cu o mica intarziere; fara internet raman
+       notate ca nesalvate si se reincearca
+
+   Nu e "offline first" complet: o persoana, un dispozitiv pe rand. Cand totusi
+   se aduna schimbari din doua locuri, se unesc dupa id (vezi mergeJournals). */
+
+const CLOUD_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+
+/* Ce nu a ajuns inca la server. Tinut in localStorage ca sa supravietuiasca unui
+   refresh facut fara internet. */
+const DIRTY_KEY = 'tj2.cloud.dirty.v1';
+const SYNC_KEY = 'tj2.cloud.syncedAt.v1';
+
+const cloudCfg = () => (window.TJ_CLOUD || { url: '', anonKey: '' });
+
+/* Configurat = are amandoua valorile. O singura valoare pusa e o greseala de
+   copiere, nu o intentie, deci nu pornim pe jumatate. */
+function cloudOn() {
+  const c = cloudCfg();
+  return !!(c.url && c.anonKey && /^https:\/\/.+/.test(c.url));
+}
+
+let sb = null;
+let libPromise = null;
+
+function loadCloudLib() {
+  if (window.supabase && window.supabase.createClient) return Promise.resolve(window.supabase);
+  if (libPromise) return libPromise;
+  libPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = CLOUD_LIB;
+    s.onload = () => window.supabase && window.supabase.createClient
+      ? resolve(window.supabase)
+      : reject(new Error('Supabase library loaded but looks wrong.'));
+    s.onerror = () => reject(new Error('Could not reach the server library. Check your connection.'));
+    document.head.appendChild(s);
+  });
+  return libPromise;
+}
+
+/* Clientul, facut o singura data. Arunca daca nu se poate ajunge la biblioteca -
+   cine cheama trebuie sa arate mesajul, nu sa ramana blocat. */
+function cloudClient() {
+  if (sb) return Promise.resolve(sb);
+  const c = cloudCfg();
+  return loadCloudLib().then(lib => {
+    sb = lib.createClient(c.url, c.anonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    return sb;
+  });
+}
+
+/* ------------------------------------------------------------------ cont */
+
+/* Mesajele lui Supabase sunt in engleza de programator ("Invalid login
+   credentials"). Le traduc in ce s-a intamplat de fapt. */
+function cloudError(e) {
+  const m = String((e && e.message) || e || '').toLowerCase();
+  if (m.includes('invalid login credentials')) return 'Wrong email or password.';
+  if (m.includes('email not confirmed')) return 'Check your email and confirm the address first.';
+  if (m.includes('user already registered') || m.includes('already been registered')) {
+    return 'That email already has an account. Use Log in instead.';
+  }
+  if (m.includes('password should be at least')) return 'Password needs at least 8 characters.';
+  if (m.includes('unable to validate email') || m.includes('invalid email')) {
+    return 'That email does not look right.';
+  }
+  if (m.includes('over_email_send_rate') || m.includes('rate limit')) {
+    return 'Too many tries. Wait a minute and try again.';
+  }
+  if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('could not reach')) {
+    return 'No connection to the server. Check your internet.';
+  }
+  return (e && e.message) || 'Something went wrong. Try again.';
+}
+
+function cloudSignUp(email, password) {
+  return cloudClient()
+    .then(c => c.auth.signUp({ email, password }))
+    .then(({ data, error }) => {
+      if (error) throw new Error(cloudError(error));
+      /* Fara sesiune inseamna ca proiectul cere confirmare pe email. */
+      return { session: data.session, needsEmail: !data.session };
+    });
+}
+
+function cloudSignIn(email, password) {
+  return cloudClient()
+    .then(c => c.auth.signInWithPassword({ email, password }))
+    .then(({ data, error }) => {
+      if (error) throw new Error(cloudError(error));
+      return { session: data.session, needsEmail: false };
+    });
+}
+
+function cloudSignOut() {
+  return cloudClient()
+    .then(c => c.auth.signOut())
+    .then(() => { localStorage.removeItem(SYNC_KEY); });
+}
+
+/* Sesiunea salvata, daca exista. Nu arunca: la pornire vrem doar sa stim daca
+   intram direct sau aratam ecranul de intrare. */
+function cloudSession() {
+  return cloudClient()
+    .then(c => c.auth.getSession())
+    .then(({ data }) => (data && data.session) || null)
+    .catch(() => null);
+}
+
+function cloudResetPassword(email) {
+  return cloudClient()
+    .then(c => c.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] }))
+    .then(({ error }) => { if (error) throw new Error(cloudError(error)); });
+}
+
+/* ------------------------------------------------------------------ date */
+
+function cloudFetch(userId) {
+  return cloudClient()
+    .then(c => c.from('journals').select('data, updated_at').eq('user_id', userId).maybeSingle())
+    .then(({ data, error }) => {
+      if (error) throw new Error(cloudError(error));
+      if (!data) return null;
+      return { journal: data.data || {}, updatedAt: data.updated_at };
+    });
+}
+
+function cloudPush(userId, journal) {
+  return cloudClient()
+    .then(c => c.from('journals').upsert(
+      { user_id: userId, data: journal }, { onConflict: 'user_id' }).select('updated_at').maybeSingle())
+    .then(({ data, error }) => {
+      if (error) throw new Error(cloudError(error));
+      return data ? data.updated_at : null;
+    });
+}
+
+/* Cand acelasi cont a fost folosit in doua locuri, nu arunc nici o parte:
+   tradeurile si conturile se unesc dupa id, iar la acelasi id tine cel local,
+   pentru ca e cel la care persoana lucra chiar acum. */
+function mergeJournals(local, remote) {
+  const byId = (a, b) => {
+    const out = new Map();
+    (b || []).forEach(x => x && x.id && out.set(x.id, x));
+    (a || []).forEach(x => x && x.id && out.set(x.id, x));
+    return [...out.values()];
+  };
+  return {
+    trades: byId(local.trades, remote.trades),
+    accounts: byId(local.accounts, remote.accounts),
+    settings: Object.assign({}, remote.settings, local.settings)
+  };
+}
+
+/* ------------------------------------------------------------- nesalvat */
+
+const cloudDirty = () => localStorage.getItem(DIRTY_KEY) === '1';
+const markDirty = () => localStorage.setItem(DIRTY_KEY, '1');
+const markClean = () => localStorage.removeItem(DIRTY_KEY);
+
+/* ------------------------------------------------------------- sincronizare
+
+   Legatura intre starea din memorie si server. Cand `cloudOn()` e false, tot ce e
+   aici sta deoparte si jurnalul traieste numai in localStorage, ca inainte. */
+
+let cloudUser = null;      // utilizatorul logat pe server, null in mod local
+let saveTimer = null;
+let saving = false;
+
+/* Tot jurnalul, in forma in care pleaca la server si vine din fisierul de backup. */
+function journalSnapshot() {
+  return { trades: trades, accounts: accounts, settings: Object.assign({}, settings) };
+}
+
+/* Pune in aplicatie un jurnal venit din afara (server sau fisier) si il scrie
+   local. Curatarile din load() se aplica si aici. */
+function hydrateJournal(j) {
+  trades = Array.isArray(j.trades) ? j.trades : [];
+  accounts = Array.isArray(j.accounts) ? j.accounts : [];
+  if (j.settings && typeof j.settings === 'object') {
+    if (j.settings.theme === 'dark' || j.settings.theme === 'light') settings.theme = j.settings.theme;
+    if (CURRENCY_SIGN[j.settings.currency]) settings.currency = j.settings.currency;
+  }
+  saveTrades();
+  saveAccounts();
+  saveSettings();
+  load();
+  applyTheme();
+  document.getElementById('currency').value = settings.currency;
+}
+
+/* Ultima stare stiuta a sincronizarii. O tin separat de desen fiindca startApp()
+   redeseneaza bara si nu are de unde sa ghiceasca: fara asta, un server picat la
+   pornire ajungea sa scrie "Saved" pentru date care nu plecasera nicaieri. */
+let syncState = null;
+let syncDetail = '';
+
+/* Randul din bara de sus: unde stau datele si daca au ajuns acolo.
+   Chemat fara argumente, redeseneaza ultima stare in loc sa o reinventeze. */
+function renderSyncChip(state, detail) {
+  if (state) { syncState = state; syncDetail = detail || ''; }
+  const chip = document.getElementById('syncChip');
+  if (!chip) return;
+  if (!cloudOn()) {
+    chip.hidden = false;
+    chip.className = 'sync-chip local';
+    chip.textContent = 'This browser only';
+    chip.title = 'No account server is set up, so the journal lives in this browser. Export a backup from Accounts to move it.';
+    return;
+  }
+  chip.hidden = false;
+  const looks = {
+    synced: ['ok', 'Saved', 'Everything is saved to your account.'],
+    saving: ['busy', 'Saving…', 'Sending your latest changes to your account.'],
+    offline: ['warn', 'Not saved yet', 'No connection. Your changes are here and will be sent when you are back online.'],
+    error: ['warn', 'Not saved yet', syncDetail || 'Could not reach your account. Retrying.']
+  };
+  const [cls, label, title] = looks[syncState] || looks.saving;
+  chip.className = 'sync-chip ' + cls;
+  chip.textContent = label;
+  chip.title = title;
+}
+
+/* Scrierile se grupeaza: cine scrie cinci trade-uri la rand nu trimite cinci ori. */
+function queueCloudSave() {
+  if (!cloudOn() || !cloudUser) return;
+  markDirty();
+  renderSyncChip('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(pushNow, 800);
+}
+
+function pushNow() {
+  if (!cloudOn() || !cloudUser || saving) return Promise.resolve();
+  saving = true;
+  renderSyncChip('saving');
+  return cloudPush(cloudUser.id, journalSnapshot())
+    .then(() => {
+      markClean();
+      localStorage.setItem(SYNC_KEY, new Date().toISOString());
+      renderSyncChip('synced');
+    })
+    .catch(e => {
+      renderSyncChip(navigator.onLine === false ? 'offline' : 'error', e.message);
+    })
+    .then(() => { saving = false; });
+}
+
+/* Reincercari cat timp a ramas ceva netrimis. Ieftin: nu face nimic daca e curat. */
+function startSyncRetries() {
+  if (window.__syncRetry) return;
+  window.__syncRetry = setInterval(() => { if (cloudDirty()) pushNow(); }, 20000);
+  window.addEventListener('online', () => { if (cloudDirty()) pushNow(); });
+  window.addEventListener('beforeunload', e => {
+    if (cloudDirty()) {
+      e.preventDefault();
+      e.returnValue = 'Your last changes have not reached your account yet.';
+      return e.returnValue;
+    }
+  });
+}
+
+/* Deschide jurnalul utilizatorului: ia ce e pe server si, daca aici ramasese ceva
+   netrimis, le uneste in loc sa arunce vreo parte. */
+function openCloudJournal(user) {
+  cloudUser = user;
+  renderSyncChip('saving');
+
+  return cloudFetch(user.id)
+    .then(row => {
+      const remote = row ? row.journal : {};
+      const hasRemote = Array.isArray(remote.trades) && (remote.trades.length || (remote.accounts || []).length);
+      const local = journalSnapshot();
+      const hasLocal = local.trades.length || local.accounts.length;
+
+      if (cloudDirty() && hasRemote && hasLocal) {
+        hydrateJournal(mergeJournals(local, remote));
+        return pushNow();
+      }
+      if (hasRemote) {
+        hydrateJournal(remote);
+        markClean();
+        localStorage.setItem(SYNC_KEY, new Date().toISOString());
+        renderSyncChip('synced');
+        return;
+      }
+      /* Server gol: urcam ce e aici. Asa trece jurnalul facut inainte de cont. */
+      if (hasLocal) return pushNow();
+      markClean();
+      renderSyncChip('synced');
+    })
+    .catch(e => {
+      /* Fara server tot deschidem jurnalul, din memoria locala - mai bine asa
+         decat un ecran gol pentru cineva care e doar fara internet. */
+      renderSyncChip(navigator.onLine === false ? 'offline' : 'error', e.message);
+    })
+    .then(() => { startSyncRetries(); });
+}
+
 /* ---------------------------------------------------------------- cont
 
    Atentie: aplicatia e locala, fara server. Contul e o incuietoare pe acest
@@ -363,13 +685,22 @@ const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
    "Log in" nu are ce gasi - de asta filele se pot comuta si se explica de ce. */
 let authTab = null;
 
+/* Textul original al panoului de explicatii. Il pastrez fiindca mesajul
+   "Check your email" il inlocuieste, si comutarea filelor trebuie sa il aduca
+   inapoi. */
+let authBlankHtml = null;
+
 function authMode() {
-  return authTab || (getAccount() ? 'signin' : 'signup');
+  if (authTab) return authTab;
+  /* Cu server, cine revine are deja cont: Log in e ce vrea de obicei.
+     In mod local, contul exista doar aici, deci fara el nu e nimic de deschis. */
+  return cloudOn() || getAccount() ? 'signin' : 'signup';
 }
 
-/* Log in fara niciun cont in browserul asta: nu are rost sa arat formularul. */
+/* Log in fara niciun cont in browserul asta: nu are rost sa arat formularul.
+   Cu server nu se intampla - contul e al tau oriunde, deci formularul ramane. */
 function authIsBlank() {
-  return authMode() === 'signin' && !getAccount();
+  return !cloudOn() && authMode() === 'signin' && !getAccount();
 }
 
 function setAuthTab(tab) {
@@ -398,8 +729,16 @@ function renderAuth() {
     ? 'Your journal is locked to this device.'
     : acc ? 'Sign in to open your journal.' : 'Open your journal.';
 
+  const blankBox = document.getElementById('authBlank');
+  if (authBlankHtml === null) authBlankHtml = blankBox.innerHTML;
+  else if (blankBox.innerHTML !== authBlankHtml) {
+    blankBox.innerHTML = authBlankHtml;
+    const go = document.getElementById('authGoSignup');
+    if (go) go.onclick = () => setAuthTab('signup');
+  }
+
   document.getElementById('authFields').hidden = blank;
-  document.getElementById('authBlank').hidden = !blank;
+  blankBox.hidden = !blank;
   document.getElementById('authBtn').hidden = blank;
 
   document.getElementById('authBtn').textContent =
@@ -412,11 +751,32 @@ function renderAuth() {
   document.getElementById('authPw2').value = '';
   if (mode === 'signin' && acc) document.getElementById('authEmail').value = acc.email;
 
-  document.getElementById('authFoot').innerHTML = mode === 'signin' && acc
-    ? 'Forgot your password? <button type="button" id="authReset">Reset the account</button>'
+  /* Cu server, uitarea parolei se rezolva pe email, ca la orice alt cont. In mod
+     local nu exista email de trimis, deci singura iesire e sa stergi
+     incuietoarea - tradeurile raman pe loc. */
+  document.getElementById('authFoot').innerHTML = mode !== 'signin' ? ''
+    : cloudOn() ? 'Forgot your password? <button type="button" id="authReset">Email me a reset link</button>'
+    : acc ? 'Forgot your password? <button type="button" id="authReset">Reset the account</button>'
     : '';
+
   const reset = document.getElementById('authReset');
-  if (reset) reset.onclick = () => {
+  if (reset) reset.onclick = cloudOn() ? () => {
+    const email = document.getElementById('authEmail').value.trim().toLowerCase();
+    const err = document.getElementById('authErr');
+    if (!validEmail(email)) { err.textContent = 'Type your email first, then ask for the link.'; return; }
+    reset.disabled = true;
+    reset.textContent = 'Sending…';
+    cloudResetPassword(email)
+      .then(() => {
+        document.getElementById('authFoot').textContent =
+          'Reset link sent to ' + email + '. Check your inbox.';
+      })
+      .catch(e => {
+        err.textContent = e.message;
+        reset.disabled = false;
+        reset.textContent = 'Email me a reset link';
+      });
+  } : () => {
     if (!confirm('Reset the account?\n\nYour trades stay exactly where they are — only the email and password are removed, so you can set them again.\n\nThis is possible because everything lives in this browser.')) return;
     localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem(SESSION_KEY);
@@ -444,19 +804,38 @@ async function submitAuth(ev) {
   btn.textContent = mode === 'signup' ? 'Creating…' : 'Checking…';
 
   try {
-    if (mode === 'signup') {
-      const d = await derive(pw);
-      localStorage.setItem(AUTH_KEY, JSON.stringify(
-        Object.assign({ email, createdAt: new Date().toISOString() }, d)));
+    if (cloudOn()) {
+      const r = mode === 'signup' ? await cloudSignUp(email, pw) : await cloudSignIn(email, pw);
+      if (r.needsEmail) {
+        /* Proiectul cere confirmarea adresei. Nu e o eroare, deci nu o arat ca
+           una - dar nici nu pot deschide jurnalul inca. */
+        document.getElementById('authFields').hidden = true;
+        document.getElementById('authBtn').hidden = true;
+        document.getElementById('authFoot').innerHTML = '';
+        const blank = document.getElementById('authBlank');
+        blank.hidden = false;
+        blank.innerHTML = '<p><b>Check your email.</b></p>' +
+          '<p>We sent a confirmation link to <b>' + escapeHtml(email) + '</b>. ' +
+          'Open it, then come back here and log in.</p>';
+        return;
+      }
+      await openCloudJournal(r.session.user);
+      startApp();
     } else {
-      const acc = getAccount();
-      if (!acc) { throw new Error('There is no account in this browser yet. Sign up to make one.'); }
-      if (email !== acc.email) { throw new Error('No account with that email in this browser.'); }
-      const d = await derive(pw, acc.salt);
-      if (d.hash !== acc.hash) { throw new Error('Wrong password.'); }
+      if (mode === 'signup') {
+        const d = await derive(pw);
+        localStorage.setItem(AUTH_KEY, JSON.stringify(
+          Object.assign({ email, createdAt: new Date().toISOString() }, d)));
+      } else {
+        const acc = getAccount();
+        if (!acc) { throw new Error('There is no account in this browser yet. Sign up to make one.'); }
+        if (email !== acc.email) { throw new Error('No account with that email in this browser.'); }
+        const d = await derive(pw, acc.salt);
+        if (d.hash !== acc.hash) { throw new Error('Wrong password.'); }
+      }
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ email, at: new Date().toISOString() }));
+      startApp();
     }
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ email, at: new Date().toISOString() }));
-    startApp();
   } catch (e) {
     err.textContent = e.message || 'Could not sign you in.';
   } finally {
@@ -483,6 +862,12 @@ function bindAuth() {
     document.getElementById('authPw2').type = type;
   };
   document.getElementById('signOutBtn').onclick = () => {
+    if (cloudOn()) {
+      /* Nesalvat + iesire = date pierdute. Intrebam, nu presupunem. */
+      if (cloudDirty() && !confirm('Your last changes have not reached your account yet. Sign out anyway?')) return;
+      cloudSignOut().catch(() => {}).then(() => location.reload());
+      return;
+    }
     localStorage.removeItem(SESSION_KEY);
     location.reload();
   };
@@ -1825,7 +2210,9 @@ function startApp() {
 
   const acc = getAccount();
   document.getElementById('userChip').hidden = false;
-  document.getElementById('userEmail').textContent = acc ? acc.email : '';
+  document.getElementById('userEmail').textContent =
+    cloudUser ? cloudUser.email : acc ? acc.email : '';
+  renderSyncChip();
 
   applyRoute();
   renderClock();
@@ -1840,7 +2227,23 @@ function startApp() {
   }
 }
 
+/* Cat verificam sesiunea, ecranul nu trebuie sa arate nici jurnalul nici
+   formularul - altfel clipeste "Log in" pentru cineva care e deja logat. */
+function showAuthLoading() {
+  document.getElementById('authScreen').hidden = false;
+  document.querySelector('.nav').hidden = true;
+  document.querySelector('.wrap').hidden = true;
+  document.getElementById('authSeg').hidden = true;
+  document.getElementById('authFields').hidden = true;
+  document.getElementById('authBtn').hidden = true;
+  document.getElementById('authBlank').hidden = true;
+  document.getElementById('authTitle').textContent = 'Opening your journal…';
+  document.getElementById('authSub').textContent = 'One moment.';
+}
+
 function showAuth() {
+  document.getElementById('authSeg').hidden = false;
+
   document.getElementById('authScreen').hidden = false;
   document.querySelector('.nav').hidden = true;
   document.querySelector('.wrap').hidden = true;
@@ -1855,4 +2258,20 @@ document.getElementById('currency').value = settings.currency;
 bind();
 bindAuth();
 
-if (isSignedIn()) startApp(); else showAuth();
+/* Cu server, la pornire trebuie intrebat daca sesiunea mai e valabila, iar asta
+   cere o cerere de retea - deci pornirea e asincrona. In mod local ramane
+   instantanee, ca inainte. */
+function boot() {
+  renderSyncChip(cloudOn() ? 'saving' : 'local');
+  if (!cloudOn()) {
+    if (isSignedIn()) startApp(); else showAuth();
+    return Promise.resolve();
+  }
+  showAuthLoading();
+  return cloudSession().then(session => {
+    if (!session) { showAuth(); return; }
+    return openCloudJournal(session.user).then(startApp);
+  }).catch(() => { showAuth(); });
+}
+
+boot();

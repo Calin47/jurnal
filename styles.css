@@ -784,6 +784,49 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
   max-width: 150px;
 }
 
+/* Unde stau datele si daca au ajuns acolo. Are si forma, nu doar culoare, ca
+   sa se citeasca si fara sa deosebesti verdele de galben. */
+.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.sync-chip[hidden] { display: none; }
+
+.sync-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.sync-chip.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 34%, transparent); }
+.sync-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 42%, transparent); }
+
+/* In asteptare: cerc gol, nu plin, ca sa se vada ca nu e gata. */
+.sync-chip.busy { color: var(--text-3); }
+.sync-chip.busy::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+
+/* Mod local: patrat, nu cerc - nu e o stare trecatoare, e alt fel de a tine datele. */
+.sync-chip.local::before { border-radius: 2px; }
+
+/* Pe telefon nava se aranjeaza pe randuri, deci indicatorul incape - si tocmai
+   acolo conteaza sa vezi "nesalvat", cand ai semnal slab. */
+@media (max-width: 720px) {
+  .sync-chip { font-size: 11.5px; padding: 4px 9px 4px 8px; }
+}
+
 /* ============================ calendar ============================ */
 
 .cal-nav { display: flex; align-items: center; gap: 8px; }

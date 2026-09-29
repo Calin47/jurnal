@@ -188,6 +188,80 @@ function hideBackupText() {
   if (box) box.hidden = true;
 }
 
+/* Panoul codului are doua roluri: arata codul tau, sau primeste unul. Le tin in
+   acelasi loc ca sa nu fie doua casete care seamana si fac altceva. */
+let codeMode = null;   // 'out' = al meu, de copiat; 'in' = primesc unul
+
+function openCodeBox(mode) {
+  codeMode = mode;
+  const box = document.getElementById('codeBox');
+  const area = document.getElementById('codeArea');
+  box.hidden = false;
+  const out = mode === 'out';
+  document.getElementById('codeCopyBtn').hidden = !out;
+  document.getElementById('codeUseBtn').hidden = out;
+  document.getElementById('codeNoPicsWrap').hidden = !out;
+  document.getElementById('codeLabel').textContent =
+    out ? 'Your transfer code' : 'Transfer code from your other browser';
+  area.readOnly = out;
+  document.getElementById('codeMsg').textContent = '';
+
+  if (mode === 'in') {
+    area.value = '';
+    area.focus();
+    return Promise.resolve();
+  }
+  return refreshTransferCode();
+}
+
+function refreshTransferCode() {
+  const area = document.getElementById('codeArea');
+  const msg = document.getElementById('codeMsg');
+  const drop = document.getElementById('codeNoPics').checked;
+  area.value = '';
+  msg.textContent = 'Building the code…';
+  return makeTransferCode(drop).then(code => {
+    area.value = code;
+    const pics = trades.filter(t => t.image).length;
+    msg.textContent = codeSize(code) + ' \u00b7 ' + countLabel(trades.length, 'trade')
+      + ' and ' + countLabel(accounts.length, 'account')
+      + (pics && !drop ? ' \u00b7 ' + countLabel(pics, 'screenshot') + ' included' : '')
+      + (pics && drop ? ' \u00b7 screenshots left out' : '');
+    area.focus();
+    area.select();
+  }).catch(e => { msg.textContent = e.message || 'Could not build the code.'; });
+}
+
+function closeCodeBox() {
+  document.getElementById('codeBox').hidden = true;
+  codeMode = null;
+}
+
+function useTransferCode() {
+  const msg = document.getElementById('codeMsg');
+  const raw = document.getElementById('codeArea').value;
+  msg.textContent = '';
+  return Promise.resolve()
+    .then(() => readTransferCode(raw))
+    .then(data => {
+      if ((trades.length || accounts.length) && !confirm(
+        'This replaces everything in this browser (' + countLabel(trades.length, 'trade') + ', '
+        + countLabel(accounts.length, 'account') + ') with the '
+        + countLabel(data.trades.length, 'trade') + ' and '
+        + countLabel(data.accounts.length, 'account') + ' in the code. Continue?')) {
+        msg.textContent = 'Left alone - nothing changed.';
+        return 'cancelled';
+      }
+      const problem = applyBackup(data);
+      if (problem) { msg.textContent = problem; return problem; }
+      closeCodeBox();
+      backupNote('Brought in ' + countLabel(trades.length, 'trade') + ' and '
+        + countLabel(accounts.length, 'account') + '.', false);
+      return '';
+    })
+    .catch(e => { msg.textContent = e.message; return e.message; });
+}
+
 /* Incearca clipboardul; daca browserul nu il da, textul ramane selectat. */
 function copyBackupText() {
   const area = document.getElementById('backupJson');
@@ -206,6 +280,111 @@ function copyBackupText() {
   } catch (e) { /* cadem pe selectie */ }
   return Promise.resolve(done(false));
 }
+
+/* --------------------------------------------------------- cod de transfer
+
+   Acelasi jurnal, dar ca un text pe care il copiezi. Exista fiindca descarcarile
+   si alegerea unui fisier nu merg la fel peste tot - pe telefon, in pagini
+   gazduite, cu politici de securitate stranse - iar copy-paste merge oriunde.
+
+   Forma: "TJ1." + JSON comprimat (gzip) si trecut in base64. Prefixul e acolo ca
+   sa pot spune "asta nu e un cod de transfer" in loc sa ma prefac ca nu inteleg. */
+
+const CODE_PREFIX = 'TJ1.';
+
+const bytesToB64 = bytes => {
+  let out = '';
+  const chunk = 0x8000;   // pe bucati, altfel apply() se ineaca la jurnale mari
+  for (let i = 0; i < bytes.length; i += chunk) {
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(out);
+};
+
+const b64ToBytes = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+
+/* Comprimarea e optionala: browserele vechi nu au CompressionStream, si atunci
+   codul pleaca necomprimat - mai lung, dar valid. Ce conta sa nu ratez e cazul
+   mixt: trimiti dintr-un browser care comprima intr-unul care nu poate
+   decomprima. De aia decompresia se uita la primii doi octeti (1f 8b, semnatura
+   gzip) si spune limpede ce lipseste, in loc sa zica "cod stricat". */
+const canZip = () => typeof CompressionStream === 'function' && typeof Response === 'function';
+const canUnzip = () => typeof DecompressionStream === 'function' && typeof Response === 'function';
+const isGzipped = bytes => bytes.length > 1 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+
+function gzip(text) {
+  const bytes = new TextEncoder().encode(text);
+  if (!canZip()) return Promise.resolve(bytes);
+  const cs = new CompressionStream('gzip');
+  const w = cs.writable.getWriter();
+  w.write(bytes);
+  w.close();
+  return new Response(cs.readable).arrayBuffer().then(b => new Uint8Array(b));
+}
+
+function gunzip(bytes) {
+  if (!isGzipped(bytes)) return Promise.resolve(new TextDecoder().decode(bytes));
+  if (!canUnzip()) {
+    return Promise.reject(new Error(
+      'This browser is too old to unpack a compressed code. Use the file import instead, ' +
+      'or make the code again with a newer browser.'));
+  }
+  const ds = new DecompressionStream('gzip');
+  const w = ds.writable.getWriter();
+  w.write(bytes);
+  w.close();
+  return new Response(ds.readable).text();
+}
+
+/* Pozele sunt base64 in localStorage si umfla codul de zeci de ori, deci se pot
+   lasa afara. Tradeurile rămân toate, doar imaginea lipseste. */
+function backupWithoutImages(b) {
+  return Object.assign({}, b, {
+    trades: b.trades.map(t => (t.image ? Object.assign({}, t, { image: '' }) : t))
+  });
+}
+
+function makeTransferCode(dropImages) {
+  const data = dropImages ? backupWithoutImages(buildBackup()) : buildBackup();
+  return gzip(JSON.stringify(data)).then(z => CODE_PREFIX + bytesToB64(z));
+}
+
+/* Intoarce jurnalul, sau arunca un mesaj pentru om. */
+function readTransferCode(raw) {
+  const code = String(raw || '').replace(/\s+/g, '');
+  if (!code) throw new Error('Paste the code first.');
+  if (!code.startsWith(CODE_PREFIX)) {
+    throw new Error('That does not look like a transfer code - it should start with ' + CODE_PREFIX);
+  }
+  let bytes;
+  try {
+    bytes = b64ToBytes(code.slice(CODE_PREFIX.length));
+  } catch (e) {
+    throw new Error('That code is damaged - copy it again, all of it.');
+  }
+  return gunzip(bytes)
+    .catch(e => {
+      /* Mesajul despre browserul prea vechi e util; doar esecurile de despachetare
+         devin "cod stricat". */
+      if (/too old/.test(e.message)) throw e;
+      throw new Error('That code is damaged - copy it again, all of it.');
+    })
+    .then(text => {
+      let data;
+      try { data = JSON.parse(text); } catch (e) {
+        throw new Error('That code is damaged - copy it again, all of it.');
+      }
+      const problem = backupProblem(data);
+      if (problem) throw new Error(problem);
+      return data;
+    });
+}
+
+/* Cat de mare e codul, in vorbire omeneasca. */
+const codeSize = code => {
+  const kb = code.length / 1024;
+  return kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(kb)) + ' KB';
+};
 
 /* Spune de ce fisierul nu e bun, sau '' daca e in regula. */
 function backupProblem(data) {
@@ -2133,6 +2312,24 @@ function bind() {
     if (box.hidden) showBackupText(); else hideBackupText();
   };
   document.getElementById('copyNowBtn').onclick = copyBackupText;
+  document.getElementById('codeMakeBtn').onclick = () => openCodeBox('out');
+  document.getElementById('codePasteBtn').onclick = () => openCodeBox('in');
+  document.getElementById('codeCloseBtn').onclick = closeCodeBox;
+  document.getElementById('codeUseBtn').onclick = useTransferCode;
+  document.getElementById('codeNoPics').onchange = () => {
+    if (codeMode === 'out') refreshTransferCode();
+  };
+  document.getElementById('codeCopyBtn').onclick = () => {
+    const area = document.getElementById('codeArea');
+    const msg = document.getElementById('codeMsg');
+    area.focus();
+    area.select();
+    const done = ok => { msg.textContent = ok ? 'Copied. Paste it in your other browser.'
+      : 'Press Cmd+C to copy the selected code.'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(area.value).then(() => done(true), () => done(false));
+    } else { done(false); }
+  };
   document.getElementById('copyCloseBtn').onclick = hideBackupText;
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
   document.getElementById('importFile').onchange = e => {

@@ -433,7 +433,33 @@
         </div>
         <p class="caption" id="backupInfo">Nothing to export yet.</p>
         <p class="err" id="backupErr" hidden></p>
-        <p class="caption"><button type="button" class="linky" id="copyBtn">Or show the backup as text, to copy by hand</button></p>
+        <div class="transfer">
+          <h4>Move it without files</h4>
+          <p class="caption">If downloads are blocked or fiddly, carry your journal as a code you
+            copy and paste. Nothing is uploaded anywhere.</p>
+          <div class="acct-actions">
+            <button type="button" class="btn primary" id="codeMakeBtn">Get transfer code</button>
+            <button type="button" class="btn ghost icon" id="codePasteBtn">Paste a transfer code</button>
+          </div>
+
+          <div class="backup-text" id="codeBox" hidden>
+            <label class="field"><span id="codeLabel">Transfer code</span>
+              <textarea id="codeArea" spellcheck="false" rows="6"
+                placeholder="Paste the code from your other browser here"></textarea>
+            </label>
+            <p class="caption" id="codeMsg"></p>
+            <div class="acct-actions">
+              <button type="button" class="btn primary" id="codeCopyBtn">Copy code</button>
+              <button type="button" class="btn primary" id="codeUseBtn" hidden>Bring my journal in</button>
+              <button type="button" class="btn ghost icon" id="codeCloseBtn">Close</button>
+            </div>
+            <label class="check" id="codeNoPicsWrap" hidden>
+              <input type="checkbox" id="codeNoPics"> Leave screenshots out, to keep the code short
+            </label>
+          </div>
+        </div>
+
+        <p class="caption"><button type="button" class="linky" id="copyBtn">Or show the raw backup as text</button></p>
         <div class="backup-text" id="backupText" hidden>
           <textarea id="backupJson" readonly spellcheck="false" rows="8"></textarea>
           <div class="acct-actions">
@@ -442,8 +468,8 @@
             <span class="caption" id="copyMsg"></span>
           </div>
         </div>
-        <p class="hint">The file holds your accounts, trades and preferences &mdash; not your password.
-          On a new device create the account first, then import.</p>
+        <p class="hint">Files and codes both hold your accounts, trades and preferences &mdash; never your
+          password. Bringing a journal in replaces what is in this browser.</p>
         <input type="file" id="importFile" accept="application/json,.json" hidden>
       </section>
     </div>

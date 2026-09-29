@@ -1418,6 +1418,23 @@ td .muted { font-size: 12px; color: var(--text-3); }
 .linky:hover { color: var(--text-1); }
 .linky:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 3px; border-radius: 3px; }
 
+/* Mutarea prin cod e un drum aparte, nu o nota de subsol la export, deci sta in
+   propriul bloc cu o linie deasupra. */
+.transfer {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.transfer h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-1); }
+.transfer .caption { margin: 0; max-width: 62ch; }
+.transfer .acct-actions { margin-top: 2px; }
+.transfer .backup-text { align-self: stretch; }
+
 .backup-text { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 
 .backup-text textarea {

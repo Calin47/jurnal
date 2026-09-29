@@ -358,20 +358,52 @@ async function derive(password, saltB64) {
 
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 
+/* Fila aleasa cu mana; null = alegem noi, dupa cum arata browserul.
+   Contul exista doar in browserul in care l-ai facut, deci pe un dispozitiv nou
+   "Log in" nu are ce gasi - de asta filele se pot comuta si se explica de ce. */
+let authTab = null;
+
 function authMode() {
-  return getAccount() ? 'signin' : 'signup';
+  return authTab || (getAccount() ? 'signin' : 'signup');
+}
+
+/* Log in fara niciun cont in browserul asta: nu are rost sa arat formularul. */
+function authIsBlank() {
+  return authMode() === 'signin' && !getAccount();
+}
+
+function setAuthTab(tab) {
+  authTab = tab;
+  renderAuth();
+  const focusOn = authIsBlank() ? 'authGoSignup'
+    : (getAccount() && tab === 'signin' ? 'authPw' : 'authEmail');
+  const el = document.getElementById(focusOn);
+  if (el) el.focus();
 }
 
 function renderAuth() {
   const mode = authMode();
   const acc = getAccount();
+  const blank = authIsBlank();
+
+  [...document.querySelectorAll('#authSeg button')].forEach(b => {
+    const on = b.dataset.tab === mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+
   document.getElementById('authTitle').textContent =
-    mode === 'signup' ? 'Create your account' : 'Welcome back';
+    mode === 'signup' ? 'Create your account' : acc ? 'Welcome back' : 'Log in';
   document.getElementById('authSub').textContent = mode === 'signup'
     ? 'Your journal is locked to this device.'
-    : 'Sign in to open your journal.';
+    : acc ? 'Sign in to open your journal.' : 'Open your journal.';
+
+  document.getElementById('authFields').hidden = blank;
+  document.getElementById('authBlank').hidden = !blank;
+  document.getElementById('authBtn').hidden = blank;
+
   document.getElementById('authBtn').textContent =
-    mode === 'signup' ? 'Create account' : 'Sign in';
+    mode === 'signup' ? 'Create account' : 'Log in';
   document.getElementById('authConfirmWrap').hidden = mode !== 'signup';
   document.getElementById('authPw').setAttribute('autocomplete',
     mode === 'signup' ? 'new-password' : 'current-password');
@@ -380,7 +412,7 @@ function renderAuth() {
   document.getElementById('authPw2').value = '';
   if (mode === 'signin' && acc) document.getElementById('authEmail').value = acc.email;
 
-  document.getElementById('authFoot').innerHTML = mode === 'signin'
+  document.getElementById('authFoot').innerHTML = mode === 'signin' && acc
     ? 'Forgot your password? <button type="button" id="authReset">Reset the account</button>'
     : '';
   const reset = document.getElementById('authReset');
@@ -389,7 +421,7 @@ function renderAuth() {
     localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem(SESSION_KEY);
     document.getElementById('authEmail').value = '';
-    renderAuth();
+    setAuthTab('signup');
   };
 }
 
@@ -418,7 +450,8 @@ async function submitAuth(ev) {
         Object.assign({ email, createdAt: new Date().toISOString() }, d)));
     } else {
       const acc = getAccount();
-      if (email !== acc.email) { throw new Error('No account with that email on this device.'); }
+      if (!acc) { throw new Error('There is no account in this browser yet. Sign up to make one.'); }
+      if (email !== acc.email) { throw new Error('No account with that email in this browser.'); }
       const d = await derive(pw, acc.salt);
       if (d.hash !== acc.hash) { throw new Error('Wrong password.'); }
     }
@@ -434,11 +467,16 @@ async function submitAuth(ev) {
 
 function renderAuthButtonLabel() {
   document.getElementById('authBtn').textContent =
-    authMode() === 'signup' ? 'Create account' : 'Sign in';
+    authMode() === 'signup' ? 'Create account' : 'Log in';
 }
 
 function bindAuth() {
   document.getElementById('authForm').onsubmit = submitAuth;
+  document.getElementById('authSeg').onclick = e => {
+    const b = e.target.closest('button');
+    if (b) setAuthTab(b.dataset.tab);
+  };
+  document.getElementById('authGoSignup').onclick = () => setAuthTab('signup');
   document.getElementById('authShow').onchange = e => {
     const type = e.target.checked ? 'text' : 'password';
     document.getElementById('authPw').type = type;
@@ -1807,7 +1845,8 @@ function showAuth() {
   document.querySelector('.nav').hidden = true;
   document.querySelector('.wrap').hidden = true;
   renderAuth();
-  document.getElementById(getAccount() ? 'authPw' : 'authEmail').focus();
+  const first = authIsBlank() ? 'authGoSignup' : getAccount() ? 'authPw' : 'authEmail';
+  document.getElementById(first).focus();
 }
 
 load();

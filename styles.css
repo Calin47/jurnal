@@ -707,6 +707,28 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
 }
 
 .auth-card h1 { margin: 0; font-size: 31px; font-weight: 800; letter-spacing: -0.62px; line-height: 1.2; }
+
+/* Filele Log in / Sign up: alegerea trebuie sa se vada de la inceput, altfel
+   cine are deja cont crede ca e obligat sa faca unul nou. */
+.auth-seg { align-self: stretch; margin-bottom: 2px; }
+.auth-seg button { flex: 1; padding: 9px 15px; font-size: 14px; }
+
+/* Grupurile de campuri isi tin singure spatierea, ca sa poata fi ascunse
+   fara sa lase gol in card. */
+#authFields, .auth-blank { display: flex; flex-direction: column; gap: 16px; }
+#authFields[hidden], .auth-blank[hidden] { display: none; }
+
+.auth-blank { gap: 12px; }
+.auth-blank p { margin: 0; font-size: 13.5px; color: var(--text-3); line-height: 1.6; }
+.auth-blank p b { color: var(--text-1); font-weight: 700; }
+.auth-blank p:first-child { font-size: 14.5px; }
+
+.auth-blank-how {
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+}
+
+.auth-blank .btn { margin-top: 2px; }
 .auth-sub { margin: -10px 0 4px; font-size: 14px; color: var(--text-3); }
 
 .check {

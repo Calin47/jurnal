@@ -21,16 +21,34 @@
 <div class="auth-screen" id="authScreen" hidden>
   <form class="auth-card" id="authForm">
     <div class="auth-brand"><span class="logo-mark">TJ</span> Trading Journal</div>
-    <h1 id="authTitle">Create your account</h1>
-    <p class="auth-sub" id="authSub">Your journal is locked to this device.</p>
 
-    <label class="field">Email<input type="email" id="authEmail" autocomplete="username" placeholder="you@example.com" required></label>
-    <label class="field">Password<input type="password" id="authPw" autocomplete="current-password" placeholder="At least 8 characters" required></label>
-    <label class="field" id="authConfirmWrap">Confirm password<input type="password" id="authPw2" autocomplete="new-password"></label>
-    <label class="check"><input type="checkbox" id="authShow"> Show password</label>
+    <div class="seg auth-seg" id="authSeg" role="tablist">
+      <button type="button" data-tab="signin" role="tab">Log in</button>
+      <button type="button" data-tab="signup" role="tab">Sign up</button>
+    </div>
+
+    <h1 id="authTitle">Log in</h1>
+    <p class="auth-sub" id="authSub">Open your journal.</p>
+
+    <div id="authFields">
+      <label class="field">Email<input type="email" id="authEmail" autocomplete="username" placeholder="you@example.com"></label>
+      <label class="field">Password<input type="password" id="authPw" autocomplete="current-password" placeholder="At least 8 characters"></label>
+      <label class="field" id="authConfirmWrap">Confirm password<input type="password" id="authPw2" autocomplete="new-password"></label>
+      <label class="check"><input type="checkbox" id="authShow"> Show password</label>
+    </div>
+
+    <div class="auth-blank" id="authBlank" hidden>
+      <p><b>No account in this browser yet.</b></p>
+      <p>Accounts live in the browser you made them in - there is no server holding them,
+        which is why nothing about your trading ever leaves your device. On a new browser
+        or phone you sign up once, then bring your trades over with a backup file.</p>
+      <p class="auth-blank-how">Have a backup? Sign up here first, then open
+        <b>Accounts &rarr; Import from file</b>.</p>
+      <button type="button" class="btn primary wide" id="authGoSignup">Sign up</button>
+    </div>
 
     <p class="err" id="authErr"></p>
-    <button type="submit" class="btn primary wide" id="authBtn">Create account</button>
+    <button type="submit" class="btn primary wide" id="authBtn">Log in</button>
     <p class="auth-foot" id="authFoot"></p>
     <p class="auth-note">Everything stays in this browser — no server, no sync. Clearing your site data wipes it.</p>
   </form>

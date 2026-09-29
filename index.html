@@ -49,6 +49,7 @@
 
     <p class="err" id="authErr"></p>
     <button type="submit" class="btn primary wide" id="authBtn">Log in</button>
+    <p class="auth-hint" id="authHint" hidden></p>
     <p class="auth-foot" id="authFoot"></p>
     <p class="auth-note">Everything stays in this browser — no server, no sync. Clearing your site data wipes it.</p>
   </form>
@@ -81,6 +82,15 @@
 </nav>
 
 <div class="wrap" hidden>
+
+  <!-- randul care apare cand browserul asta nu avea jurnalul -->
+  <div class="notice" id="notice" hidden>
+    <p id="noticeText"></p>
+    <div class="notice-actions">
+      <button type="button" class="btn ghost icon" id="noticeGo">Import a backup</button>
+      <button type="button" class="btn ghost icon" id="noticeClose" aria-label="Dismiss">Dismiss</button>
+    </div>
+  </div>
 
   <!-- ---------------- ceas + timeline sesiuni ---------------- -->
   <section class="card hero">

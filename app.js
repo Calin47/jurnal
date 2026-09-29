@@ -690,6 +690,10 @@ let authTab = null;
    inapoi. */
 let authBlankHtml = null;
 
+/* Log in a facut chiar acum incuietoarea, intr-un browser care nu avea una. Cine a
+   apasat trebuie sa afle de ce jurnalul e gol, altfel crede ca a pierdut datele. */
+let freshLocalAccount = false;
+
 function authMode() {
   if (authTab) return authTab;
   /* Cu server, cine revine are deja cont: Log in e ce vrea de obicei.
@@ -697,17 +701,18 @@ function authMode() {
   return cloudOn() || getAccount() ? 'signin' : 'signup';
 }
 
-/* Log in fara niciun cont in browserul asta: nu are rost sa arat formularul.
-   Cu server nu se intampla - contul e al tau oriunde, deci formularul ramane. */
+/* Formularul se arata mereu. Am avut aici un panou de explicatii care lua locul
+   campurilor cand browserul nu avea cont, si rezultatul era ca pe Log in nu aveai
+   unde sa scrii - exact lucrul pe care butonul il promite. Explicatia a ramas, dar
+   ca un rand sub formular, nu ca un perete in fata lui. */
 function authIsBlank() {
-  return !cloudOn() && authMode() === 'signin' && !getAccount();
+  return false;
 }
 
 function setAuthTab(tab) {
   authTab = tab;
   renderAuth();
-  const focusOn = authIsBlank() ? 'authGoSignup'
-    : (getAccount() && tab === 'signin' ? 'authPw' : 'authEmail');
+  const focusOn = getAccount() && tab === 'signin' ? 'authPw' : 'authEmail';
   const el = document.getElementById(focusOn);
   if (el) el.focus();
 }
@@ -740,6 +745,16 @@ function renderAuth() {
   document.getElementById('authFields').hidden = blank;
   blankBox.hidden = !blank;
   document.getElementById('authBtn').hidden = blank;
+
+  /* Randul care spune de ce Log in merge si intr-un browser gol. Fara el, cineva
+     care intra prima data pe alt dispozitiv crede ca si-a pierdut tradeurile. */
+  const hint = document.getElementById('authHint');
+  const showHint = !cloudOn() && mode === 'signin' && !acc;
+  hint.hidden = !showHint;
+  if (showHint) {
+    hint.textContent = 'This browser has no journal yet. Logging in sets one up with '
+      + 'these details - your existing trades come over from Accounts \u2192 Import from file.';
+  }
 
   document.getElementById('authBtn').textContent =
     mode === 'signup' ? 'Create account' : 'Log in';
@@ -822,14 +837,21 @@ async function submitAuth(ev) {
       await openCloudJournal(r.session.user);
       startApp();
     } else {
-      if (mode === 'signup') {
+      const acc = getAccount();
+
+      if (mode === 'signup' || !acc) {
+        /* Log in intr-un browser fara cont nu e o greseala de-a celui care scrie:
+           in mod local contul e doar o incuietoare pe browserul asta, deci o pun
+           acum, cu datele tastate. Fara asta, aceeasi parola nu ar merge pe al
+           doilea dispozitiv si butonul ar minti. */
         const d = await derive(pw);
         localStorage.setItem(AUTH_KEY, JSON.stringify(
           Object.assign({ email, createdAt: new Date().toISOString() }, d)));
+        if (mode === 'signin') freshLocalAccount = true;
       } else {
-        const acc = getAccount();
-        if (!acc) { throw new Error('There is no account in this browser yet. Sign up to make one.'); }
-        if (email !== acc.email) { throw new Error('No account with that email in this browser.'); }
+        if (email !== acc.email) {
+          throw new Error('This browser holds the journal of ' + acc.email + '. Use that email, or Sign up to start a new one here.');
+        }
         const d = await derive(pw, acc.salt);
         if (d.hash !== acc.hash) { throw new Error('Wrong password.'); }
       }
@@ -850,6 +872,15 @@ function renderAuthButtonLabel() {
 }
 
 function bindAuth() {
+  document.getElementById('noticeClose').onclick = () => {
+    freshLocalAccount = false;
+    renderNotice();
+  };
+  document.getElementById('noticeGo').onclick = () => {
+    location.hash = '#accounts';
+    /* dupa ce s-a schimbat pagina, deschidem direct alegerea fisierului */
+    setTimeout(() => document.getElementById('importFile').click(), 60);
+  };
   document.getElementById('authForm').onsubmit = submitAuth;
   document.getElementById('authSeg').onclick = e => {
     const b = e.target.closest('button');
@@ -2213,6 +2244,7 @@ function startApp() {
   document.getElementById('userEmail').textContent =
     cloudUser ? cloudUser.email : acc ? acc.email : '';
   renderSyncChip();
+  renderNotice();
 
   applyRoute();
   renderClock();
@@ -2229,6 +2261,19 @@ function startApp() {
 
 /* Cat verificam sesiunea, ecranul nu trebuie sa arate nici jurnalul nici
    formularul - altfel clipeste "Log in" pentru cineva care e deja logat. */
+/* Randul de sus, cand browserul nu avea jurnalul. Nu e o eroare, deci nu arata ca
+   una - dar trebuie sa explice de ce e gol, cu drumul spre datele adevarate. */
+function renderNotice() {
+  const box = document.getElementById('notice');
+  if (!box) return;
+  if (!freshLocalAccount) { box.hidden = true; return; }
+  document.getElementById('noticeText').innerHTML =
+    '<b>This browser did not have your journal yet, so it starts empty.</b> ' +
+    'Your trades live in the browser you wrote them in - not on a server. ' +
+    'Export a backup there, then bring it in here.';
+  box.hidden = false;
+}
+
 function showAuthLoading() {
   document.getElementById('authScreen').hidden = false;
   document.querySelector('.nav').hidden = true;

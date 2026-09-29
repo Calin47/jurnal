@@ -743,6 +743,16 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
 
 .check input { width: auto; margin: 0; accent-color: var(--accent-bright); }
 
+.auth-hint {
+  margin: -4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.auth-hint[hidden] { display: none; }
+
 .auth-foot { margin: 0; font-size: 13px; color: var(--text-3); text-align: center; }
 
 .auth-foot button {
@@ -783,6 +793,35 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
   white-space: nowrap;
   max-width: 150px;
 }
+
+/* Randul care explica un jurnal gol. Informeaza, deci e albastru ca accentul, nu
+   galben de avertisment - nimeni nu a gresit nimic. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  border-left-width: 3px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.notice[hidden] { display: none; }
+
+.notice p {
+  margin: 0;
+  flex: 1 1 320px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.notice p b { color: var(--text-1); font-weight: 700; }
+.notice-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Unde stau datele si daca au ajuns acolo. Are si forma, nu doar culoare, ca
    sa se citeasca si fara sa deosebesti verdele de galben. */

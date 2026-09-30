@@ -380,6 +380,43 @@ function readTransferCode(raw) {
     });
 }
 
+/* Un cod pus in adresa, ca #import=TJ1..., aduce jurnalul cu un singur click.
+   Bucata de dupa # nu pleaca niciodata la server, deci nu trece prin internet nici
+   cand linkul e al unui site public. Dupa import scot codul din bara de adrese: un
+   link cu tot jurnalul in el nu are ce sta in istoricul browserului. */
+function importFromUrl() {
+  const m = /[#&]import=([^&]+)/.exec(location.hash || '');
+  if (!m) return Promise.resolve(false);
+
+  const clean = () => history.replaceState(null, '',
+    location.pathname + location.search + (currentRoute() ? '#' + currentRoute() : ''));
+
+  return Promise.resolve()
+    .then(() => readTransferCode(decodeURIComponent(m[1])))
+    .then(data => {
+      const what = countLabel(data.trades.length, 'trade') + ' and '
+        + countLabel(data.accounts.length, 'account');
+      const mine = trades.length || accounts.length;
+      const question = mine
+        ? 'This link carries ' + what + '. Bring them in? It replaces the '
+          + countLabel(trades.length, 'trade') + ' already in this browser.'
+        : 'This link carries ' + what + '. Bring them in?';
+      if (!confirm(question)) { clean(); return false; }
+
+      const problem = applyBackup(data);
+      clean();
+      if (problem) { alert(problem); return false; }
+      backupNote('Brought in ' + countLabel(trades.length, 'trade') + ' and '
+        + countLabel(accounts.length, 'account') + '.', false);
+      return true;
+    })
+    .catch(e => {
+      clean();
+      alert('That link did not work: ' + e.message);
+      return false;
+    });
+}
+
 /* Cat de mare e codul, in vorbire omeneasca. */
 const codeSize = code => {
   const kb = code.length / 1024;
@@ -2442,6 +2479,7 @@ function startApp() {
     cloudUser ? cloudUser.email : acc ? acc.email : '';
   renderSyncChip();
   renderNotice();
+  importFromUrl();
 
   applyRoute();
   renderClock();

@@ -144,11 +144,12 @@ button, select, input, textarea { font: inherit; color: var(--text-1); }
 
 .nav-inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px 10px 18px;
+  padding: 10px 14px 10px 18px;
   border: 1px solid var(--hairline);
-  border-radius: var(--pill);
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--solid-1) 78%, transparent);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
@@ -163,7 +164,7 @@ button, select, input, textarea { font: inherit; color: var(--text-1); }
   letter-spacing: -0.2px;
   color: var(--text-1);
   text-decoration: none;
-  margin-right: 8px;
+  margin-right: auto;
 }
 
 .logo-mark {
@@ -182,9 +183,11 @@ button, select, input, textarea { font: inherit; color: var(--text-1); }
 
 .logo:hover .logo-mark { transform: translateY(-1px); }
 
-.nav-tabs { display: flex; gap: 4px; margin-right: auto; }
+/* filele nu incap langa butoane, deci stau pe rand propriu la orice latime */
+.nav-tabs { order: 3; display: flex; gap: 4px; width: 100%; padding-top: 10px; border-top: 1px solid var(--hairline); overflow-x: auto; }
 
 .nav-tabs a {
+  flex: none;
   padding: 8px 14px;
   border-radius: var(--pill);
   color: var(--text-2);
@@ -1062,6 +1065,8 @@ table.bd tbody tr.off td { color: var(--text-3); }
 
 .bd-split { width: 128px; min-width: 128px; }
 
+.cell-note { display: block; font-size: 11px; font-weight: 400; color: var(--text-3); }
+
 .mini-prop {
   display: flex;
   height: 6px;
@@ -1373,9 +1378,7 @@ td .muted { font-size: 12px; color: var(--text-3); }
 @media (max-width: 1080px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
 
 @media (max-width: 900px) {
-  /* filele raman singura navigatie, deci trec pe rand propriu */
-  .nav-inner { flex-wrap: wrap; border-radius: var(--r-lg); padding: 12px 14px; }
-  .nav-tabs { order: 3; width: 100%; margin: 4px 0 0; padding-top: 10px; border-top: 1px solid var(--hairline); overflow-x: auto; }
+  .nav-inner { padding: 12px 14px; }
   .section-head h2 { font-size: 25px; }
 }
 

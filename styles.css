@@ -385,7 +385,7 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
   box-shadow: 0 0 0 5px var(--accent-soft);
 }
 
-/* ============================ hero: ceas + timeline ============================ */
+/* ============================ hero: ceas + sesiuni ============================== */
 
 .hero { display: flex; gap: 32px; align-items: stretch; margin-top: 22px; }
 
@@ -412,16 +412,9 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
 #clockDate { font-size: 13px; color: var(--text-2); margin-top: 9px; }
 #clockZone { font-size: 12px; color: var(--text-3); }
 
-.timeline { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.sessions { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 
-.tl-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-  margin-bottom: 12px;
-}
+.sess-head { font-size: 13px; margin-bottom: 14px; }
 
 #openNow { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 
@@ -439,121 +432,40 @@ label.field > input[type="number"], label.field > input[type="time"], label.fiel
   70% { box-shadow: 0 0 0 8px transparent, 0 0 12px color-mix(in srgb, var(--good) 70%, transparent); }
 }
 
-.next {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
-  border-radius: var(--pill);
-  padding: 4px 12px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.tl-body {
-  --lane-label: 78px;
-  --lane-gap: 12px;
+.sess-clocks {
   --s-sydney: #4f8cf7;
   --s-tokyo: #d97b2b;
   --s-london: #26b07a;
   --s-newyork: #b98cf5;
   display: grid;
-  grid-template-columns: var(--lane-label) 1fr;
-  gap: 6px var(--lane-gap);
-  align-items: center;
-  position: relative;
-  padding-top: 7px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 
-:root[data-theme="light"] .tl-body {
+:root[data-theme="light"] .sess-clocks {
   --s-sydney: #2a63d6;
   --s-tokyo: #c25e13;
   --s-london: #12855a;
   --s-newyork: #7b4fc4;
 }
 
-.lane-name {
-  font-size: 11.5px;
-  color: var(--text-3);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-}
+.sess { text-align: center; min-width: 0; }
+.sess-name { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; }
+.sess.on .sess-name { color: var(--text-1); }
 
-.lane-name i {
-  width: 8px;
-  height: 8px;
-  border-radius: 3px;
-  background: var(--c);
-  flex: 0 0 auto;
-  transition: box-shadow .25s ease;
-}
+.sess-face { display: block; width: 92px; height: 92px; margin: 0 auto 9px; overflow: visible; }
+.sess-face line { stroke-linecap: round; }
+.sess-face .rim { fill: color-mix(in srgb, var(--c) 8%, transparent); stroke: color-mix(in srgb, var(--c) 42%, transparent); stroke-width: 3; }
+.sess-face .tick { stroke: var(--c); stroke-width: 1.5; opacity: .55; }
+.sess-face .hand-hour { stroke: var(--text-1); stroke-width: 4; }
+.sess-face .hand-minute { stroke: var(--text-1); stroke-width: 2.5; }
+.sess-face .hand-second { stroke: var(--c); stroke-width: 1.2; }
+.sess-face .pin { fill: var(--c); }
+.sess.on .sess-face .rim { fill: color-mix(in srgb, var(--c) 18%, transparent); stroke: var(--c); }
+.sess.on .sess-face { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--c) 55%, transparent)); }
 
-.lane-name.on { color: var(--text-1); font-weight: 600; }
-.lane-name.on i { box-shadow: 0 0 10px var(--c); }
-
-.rail {
-  position: relative;
-  height: 17px;
-  border-radius: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
-  overflow: hidden;
-}
-
-.blk { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--c) 20%, transparent); border-radius: 5px; overflow: hidden; }
-.blk-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--c); opacity: .9; box-shadow: 0 0 14px color-mix(in srgb, var(--c) 55%, transparent); }
-
-.blk-label {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  padding-left: 8px;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--text-1);
-  white-space: nowrap;
-  mix-blend-mode: luminosity;
-}
-
-.tl-overlay { position: absolute; left: calc(var(--lane-label) + var(--lane-gap)); right: 0; top: 0; bottom: 0; pointer-events: none; }
-.tl-past { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--page) 22%, transparent); }
-
-.tl-now {
-  position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 2px;
-  background: var(--text-1);
-  border-radius: 2px;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--text-1) 50%, transparent);
-}
-
-.tl-now::before {
-  content: "";
-  position: absolute;
-  top: -5px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--text-1);
-}
-
-.tl-axis { position: relative; height: 14px; margin-top: 6px; margin-left: calc(78px + 12px); }
-
-.tl-axis span {
-  position: absolute;
-  transform: translateX(-50%);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--text-3);
-}
-
-.tl-axis span::before { content: ""; position: absolute; top: -6px; left: 50%; width: 1px; height: 3px; background: var(--hairline-2); }
+.sess-left { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--c); font-variant-numeric: tabular-nums; }
+.sess-hours { font-size: 11px; color: var(--text-3); margin-top: 3px; }
 
 /* ============================ KPI ============================ */
 
@@ -1385,6 +1297,7 @@ td .muted { font-size: 12px; color: var(--text-3); }
 @media (max-width: 780px) {
   .hero { flex-direction: column; gap: 18px; }
   .hero-clock { border-right: 0; border-bottom: 1px solid var(--hairline); padding: 0 0 16px; }
+  .sess-clocks { grid-template-columns: repeat(2, 1fr); gap: 20px 12px; }
   #clockTime { font-size: 34px; }
   .money-row { grid-template-columns: 1fr; }
 }

@@ -62,7 +62,6 @@
       <a href="#dashboard" data-route="dashboard" class="on">Dashboard</a>
       <a href="#trades" data-route="trades">Trades</a>
       <a href="#strategy" data-route="strategy">Strategy</a>
-      <a href="#days" data-route="days">Weekdays</a>
       <a href="#months" data-route="months">Monthly</a>
       <a href="#calendar" data-route="calendar">Calendar</a>
       <a href="#accounts" data-route="accounts">Accounts</a>
@@ -94,7 +93,7 @@
     </div>
   </div>
 
-  <!-- ---------------- ceas + timeline sesiuni ---------------- -->
+  <!-- ---------------- ceas + ceasurile sesiunilor ---------------- -->
   <section class="card hero">
     <div class="hero-clock">
       <div id="clockTime">--:--:--</div>
@@ -102,18 +101,9 @@
       <div id="clockZone"></div>
     </div>
 
-    <div class="timeline">
-      <div class="tl-head">
-        <span id="openNow">—</span>
-        <span class="next" id="nextEvent"></span>
-      </div>
-      <div class="tl-body" id="tlBody">
-        <div class="tl-overlay">
-          <div class="tl-past" id="tlPast"></div>
-          <div class="tl-now" id="tlNow"></div>
-        </div>
-      </div>
-      <div class="tl-axis" id="tlAxis"></div>
+    <div class="sessions">
+      <div class="sess-head"><span id="openNow">—</span></div>
+      <div class="sess-clocks" id="sessClocks"></div>
     </div>
   </section>
 
@@ -330,75 +320,6 @@
       </div>
     </section>
     </div><!-- /view-strategy -->
-
-  <!-- ============================ WEEKDAYS ============================ -->
-  <!-- Care zi a saptamanii merge si care nu. Sambata si duminica apar in tabel
-       doar daca a tranzactionat atunci. -->
-  <div class="view" id="view-days" hidden>
-    <div class="section-head">
-      <h2>Weekdays</h2>
-      <div class="seg" id="dayScope">
-        <button data-scope="all" class="on">All time</button>
-        <button data-scope="month">This month</button>
-      </div>
-    </div>
-
-    <section class="kpis three">
-      <div class="card kpi neutral" id="bestDayCard">
-        <div class="k">Strongest day</div>
-        <div class="v sm" id="bestDay">—</div>
-        <div class="sub" id="bestDaySub">Not enough trades yet</div>
-      </div>
-      <div class="card kpi neutral" id="worstDayCard">
-        <div class="k">Weakest day</div>
-        <div class="v sm" id="worstDay">—</div>
-        <div class="sub" id="worstDaySub">Not enough trades yet</div>
-      </div>
-      <div class="card kpi neutral" id="richDayCard">
-        <div class="k">Most profitable day</div>
-        <div class="v sm" id="richDay">—</div>
-        <div class="sub" id="richDaySub">No prop-firm trades yet</div>
-      </div>
-    </section>
-
-    <section class="card" id="dayCard">
-      <div class="card-head">
-        <div>
-          <h3>Win rate by weekday</h3>
-          <p class="caption" id="dayCaption">—</p>
-        </div>
-        <div class="caption" id="dayVerdict"></div>
-      </div>
-      <div id="dayWrap"><svg class="chart" id="dayChart"></svg></div>
-      <div class="tooltip" id="dayTip"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h3>Every weekday</h3>
-          <p class="caption">Same split as everywhere else: win rate counts BE in the total.</p>
-        </div>
-      </div>
-      <div class="table-scroll">
-        <table class="bd">
-          <thead>
-            <tr>
-              <th class="l">Day</th>
-              <th class="l">Split</th>
-              <th>TP</th>
-              <th>SL</th>
-              <th>BE</th>
-              <th>Win</th>
-              <th>Net</th>
-            </tr>
-          </thead>
-          <tbody id="dayRows"></tbody>
-        </table>
-      </div>
-      <p class="empty" id="dayEmpty"><b>No trades yet</b>Log a few and this page tells you which weekday works for you.</p>
-    </section>
-  </div><!-- /view-days -->
 
   <!-- ============================ MONTHLY ============================= -->
   <!-- Rezultatele fiecarei luni in care a tranzactionat, cea mai noua prima. -->

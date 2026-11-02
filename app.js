@@ -22,11 +22,6 @@ const SESSIONS = [
   { name: 'New York', key: 'newyork', tz: 'America/New_York', open: 8 * 60, close: 17 * 60 }
 ];
 
-/* Fereastra timeline-ului: 6h in urma, 18h inainte. Markerul "now" sta la 25%. */
-const WIN_BACK = 6 * 3600000;
-const WIN_FWD = 18 * 3600000;
-const NOW_PCT = (WIN_BACK / (WIN_BACK + WIN_FWD)) * 100;
-
 const REASONS = ['HOFD', 'LOFD', 'Liq Locala', 'Liq Majora', 'Liq Minora'];
 
 /* Perechile tranzactionate - apar mereu in sugestiile de la Pair. */
@@ -35,7 +30,7 @@ const DEFAULT_PAIRS = ['DE30/EUR', 'GBP/USD', 'EUR/USD', 'UK100', 'NQ', 'US30'];
 let trades = [];
 let accounts = [];
 let settings = { theme: 'dark', currency: 'USD', scope: 'month', pairScope: 'all',
-  reasonScope: 'all', dayScope: 'all' };
+  reasonScope: 'all' };
 let editingId = null;
 let editingAcctId = null;
 /* contul deschis in fila Accounts; null = lista de conturi */
@@ -1236,13 +1231,22 @@ function activeSessions(now) {
     .map(o => o.session);
 }
 
-function nextEvent(now) {
-  const events = [];
-  occurrences(now, now + 6 * 86400000).forEach(o => {
-    if (o.open > now) events.push({ name: o.session.name, event: 'opens', at: o.open });
-    if (o.close > now) events.push({ name: o.session.name, event: 'closes', at: o.close });
-  });
-  return events.sort((a, b) => a.at - b.at)[0] || null;
+/* Ce urmeaza pentru o sesiune: inchiderea daca e deschisa, altfel deschiderea. */
+function sessionStatus(s, now) {
+  const mine = occurrences(now - 86400000, now + 6 * 86400000)
+    .filter(o => o.session === s && o.close > now)
+    .sort((a, b) => a.open - b.open);
+  const o = mine[0];
+  const isOpen = o.open <= now;
+  return { isOpen, open: o.open, close: o.close, at: isOpen ? o.close : o.open };
+}
+
+/* Rotunjit in sus: "1m" pana in ultima secunda, niciodata "0m" cu sesiunea inca
+   neschimbata. Peste o zi (weekendul) minutele nu mai ajuta. */
+function countdown(ms) {
+  const m = Math.ceil(ms / 60000);
+  if (m >= 1440) return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`;
+  return fmtDuration(m);
 }
 
 const hhmm = ms => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -1257,48 +1261,57 @@ function renderClock() {
     'local time · ' + (Intl.DateTimeFormat().resolvedOptions().timeZone || '');
 }
 
-function renderTimeline() {
+const zoneClock = {};
+
+/* Ora din fusul sesiunii, in grade pentru cele trei ace. */
+function handAngles(tz, now) {
+  zoneClock[tz] = zoneClock[tz] || new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const p = zoneClock[tz].formatToParts(new Date(now))
+    .reduce((a, x) => (a[x.type] = +x.value, a), {});
+  return {
+    hour: (p.hour % 12) * 30 + p.minute / 2,
+    minute: p.minute * 6 + p.second / 10,
+    second: p.second * 6
+  };
+}
+
+function renderHands() {
   const now = Date.now();
-  const from = now - WIN_BACK;
-  const to = now + WIN_FWD;
-  const span = to - from;
-  const pct = t => ((t - from) / span) * 100;
-  const blocks = occurrences(from, to);
+  SESSIONS.forEach(s => {
+    const face = document.querySelector(`.sess[data-session="${s.key}"] .sess-face`);
+    if (!face) return;
+    const a = handAngles(s.tz, now);
+    ['hour', 'minute', 'second'].forEach(h =>
+      face.querySelector('.hand-' + h).setAttribute('transform', `rotate(${a[h]} 50 50)`));
+  });
+}
+
+const CLOCK_TICKS = Array.from({ length: 12 }, (_, i) =>
+  `<line class="tick" x1="50" y1="${i % 3 ? 11 : 13}" x2="50" y2="8" ` +
+  `transform="rotate(${i * 30} 50 50)"/>`).join('');
+
+/* Un ceas pe sesiune, cu ora orasului ei; sub el cat mai e pana se schimba. */
+function renderSessions() {
+  const now = Date.now();
   const open = activeSessions(now);
 
-  const body = document.getElementById('tlBody');
-  const lanes = SESSIONS.map(s => {
-    const isOpen = open.includes(s);
-    const mine = blocks.filter(b => b.session === s).map(b => {
-      const left = Math.max(0, pct(b.open));
-      const right = Math.min(100, pct(b.close));
-      const width = Math.max(0, right - left);
-      const fill = now <= b.open ? 0 : now >= b.close ? 100
-        : ((now - b.open) / (b.close - b.open)) * 100;
-      const label = width > 13 ? `${hhmm(b.open)}–${hhmm(b.close)}` : '';
-      return `<div class="blk" style="left:${left}%;width:${width}%" ` +
-        `title="${s.name}: ${hhmm(b.open)} – ${hhmm(b.close)} local">` +
-        `<div class="blk-fill" style="width:${fill}%"></div>` +
-        (label ? `<div class="blk-label">${label}</div>` : '') + '</div>';
-    }).join('');
-    return `<div class="lane-name${isOpen ? ' on' : ''}" style="--c:var(--s-${s.key})">` +
-      `<i></i>${s.name}</div>` +
-      `<div class="rail" style="--c:var(--s-${s.key})">${mine}</div>`;
+  document.getElementById('sessClocks').innerHTML = SESSIONS.map(s => {
+    const st = sessionStatus(s, now);
+    return `<div class="sess${st.isOpen ? ' on' : ''}" data-session="${s.key}" style="--c:var(--s-${s.key})">` +
+      `<div class="sess-name">${s.name}</div>` +
+      `<svg class="sess-face" viewBox="0 0 100 100" role="img" aria-label="Time in ${s.name}">` +
+      `<circle class="rim" cx="50" cy="50" r="46"/>${CLOCK_TICKS}` +
+      `<line class="hand-hour" x1="50" y1="50" x2="50" y2="28"/>` +
+      `<line class="hand-minute" x1="50" y1="50" x2="50" y2="17"/>` +
+      `<line class="hand-second" x1="50" y1="56" x2="50" y2="14"/>` +
+      `<circle class="pin" cx="50" cy="50" r="3"/></svg>` +
+      `<div class="sess-left">${st.isOpen ? 'Closes' : 'Opens'} in ${countdown(st.at - now)}</div>` +
+      `<div class="sess-hours">${hhmm(st.open)}–${hhmm(st.close)} your time</div>` +
+      `</div>`;
   }).join('');
-
-  body.querySelectorAll('.lane-name, .rail').forEach(n => n.remove());
-  body.insertAdjacentHTML('afterbegin', lanes);
-  document.getElementById('tlNow').style.left = NOW_PCT + '%';
-  document.getElementById('tlPast').style.width = NOW_PCT + '%';
-
-  // axa: cate o eticheta la 3 ore
-  const step = 3 * 3600000;
-  const firstTick = Math.ceil(from / step) * step;
-  let ticks = '';
-  for (let t = firstTick; t < to; t += step) {
-    ticks += `<span style="left:${pct(t)}%">${hhmm(t)}</span>`;
-  }
-  document.getElementById('tlAxis').innerHTML = ticks;
+  renderHands();
 
   const overlap = open.some(s => s.name === 'London') && open.some(s => s.name === 'New York');
   document.getElementById('openNow').innerHTML = open.length
@@ -1306,11 +1319,6 @@ function renderTimeline() {
       (overlap ? ' <span style="color:var(--warn)">· high-volume overlap</span>' : '')
     : '<span class="live-dot" style="background:var(--text-3);box-shadow:none;animation:none"></span>' +
       '<span class="muted">All markets closed</span>';
-
-  const next = nextEvent(now);
-  document.getElementById('nextEvent').textContent = next
-    ? `${next.name} ${next.event} in ${fmtDuration((next.at - now) / 60000)}`
-    : '';
 }
 
 /* Sesiunea sugerata pentru un trade nou: cea deschisa acum. */
@@ -1470,7 +1478,6 @@ function render() {
 
   renderDaily();
   renderBreakdowns();
-  renderDays();
   renderMonths();
   renderCalendar();
   renderTable();
@@ -1701,176 +1708,6 @@ function renderBreakdowns() {
     b.classList.toggle('on', b.dataset.scope === settings.pairScope));
   document.querySelectorAll('#reasonScope button').forEach(b =>
     b.classList.toggle('on', b.dataset.scope === settings.reasonScope));
-}
-
-/* ------------------------------------------------- zilele saptamanii
-   Pe ce zi merg si pe ce zi nu: acelasi win rate ca restul aplicatiei, dar
-   grupat pe luni...duminica. */
-
-const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
-  'Saturday', 'Sunday'];
-
-/* Atatea tradeuri trebuie sa aiba o zi ca sa o numesc cea mai buna sau cea mai
-   slaba - altfel un singur TP intr-o luni ar face-o ziua de aur. */
-const DAY_MIN_TRADES = 3;
-
-/* 0 = luni ... 6 = duminica; getDay() da 0 pentru duminica. */
-function weekdayIndex(iso) {
-  return (new Date(iso + 'T12:00:00').getDay() + 6) % 7;
-}
-
-/* Luni-vineri apar mereu, weekendul doar daca a tranzactionat atunci. */
-function weekdayRows(scope) {
-  const list = scopedTrades(scope);
-  return WEEKDAY_NAMES
-    .map((name, i) => Object.assign({ key: name, idx: i },
-      tally(list.filter(t => weekdayIndex(t.date) === i))))
-    .filter(r => r.idx < 5 || r.count);
-}
-
-/* Doar zilele cu destule tradeuri, de la cel mai mare win rate la cel mai mic. */
-function rankedDays(rows) {
-  return rows
-    .filter(r => r.count >= DAY_MIN_TRADES && winRate(r) !== null)
-    .map(r => Object.assign({}, r, { wr: winRate(r) }))
-    .sort((a, b) => b.wr - a.wr || b.count - a.count);
-}
-
-function renderDays() {
-  const scope = settings.dayScope;
-  const rows = weekdayRows(scope);
-  const ranked = rankedDays(rows);
-  const tradeCount = n => n + ' trade' + (n === 1 ? '' : 's');
-
-  document.querySelectorAll('#dayScope button').forEach(b =>
-    b.classList.toggle('on', b.dataset.scope === scope));
-
-  document.getElementById('dayRows').innerHTML = breakdownHtml(rows, 'trade');
-  document.getElementById('dayEmpty').hidden = rows.some(r => r.count);
-
-  const card = (prefix, cls, value, sub) => {
-    document.getElementById(prefix + 'Card').className = 'card kpi ' + cls;
-    document.getElementById(prefix).textContent = value;
-    document.getElementById(prefix + 'Sub').innerHTML = sub;
-  };
-
-  /* Cea mai buna si cea mai slaba zi. Cu o singura zi clasata nu are sens sa
-     spun si care e cea mai slaba - ar fi aceeasi. */
-  const best = ranked[0] || null;
-  const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
-  const notEnough = `A day needs ${DAY_MIN_TRADES} trades before it gets ranked`;
-
-  if (best) {
-    card('bestDay', 'up', best.key,
-      `When you trade ${best.key}, your win rate is highest — ` +
-      `<b>${num(best.wr, 0)}%</b> from ${tradeCount(best.count)}`);
-  } else {
-    card('bestDay', 'neutral', '—', notEnough);
-  }
-
-  if (worst) {
-    card('worstDay', 'down', worst.key,
-      `When you trade ${worst.key}, your win rate is lowest — ` +
-      `<b>${num(worst.wr, 0)}%</b> from ${tradeCount(worst.count)}`);
-  } else {
-    card('worstDay', 'neutral', '—',
-      best ? `Only ${best.key} has enough trades so far` : notEnough);
-  }
-
-  /* Banii exista doar pe conturile de prop firm. Pragul e acelasi ca la win
-     rate: un singur trade mare nu face din ziua lui cea mai buna zi. */
-  const rich = rows.filter(r => r.funded >= DAY_MIN_TRADES)
-    .sort((a, b) => b.pnl - a.pnl)[0] || null;
-  if (rich) {
-    card('richDay', rich.pnl > 0 ? 'up' : rich.pnl < 0 ? 'down' : 'neutral', rich.key,
-      `<b class="${pnlClass(rich.pnl)}">${money(rich.pnl, { signed: true })}</b> ` +
-      `from ${tradeCount(rich.funded)} on prop-firm accounts`);
-  } else {
-    card('richDay', 'neutral', '—', rows.some(r => r.funded)
-      ? `Needs ${DAY_MIN_TRADES} trades on a prop-firm account`
-      : 'No prop-firm trades yet');
-  }
-
-  const total = rows.reduce((a, r) => a + r.count, 0);
-  document.getElementById('dayCaption').textContent = total
-    ? `${tradeCount(total)} ${SCOPE_LABEL[scope === 'month' ? 'month' : 'all']} · ` +
-      `BE counts in the total · faded bars have fewer than ${DAY_MIN_TRADES} trades`
-    : 'Nothing logged yet';
-  document.getElementById('dayVerdict').innerHTML = best && worst
-    ? `best ${best.key.slice(0, 3)} ${pctRing(best.wr)} · ` +
-      `worst ${worst.key.slice(0, 3)} ${pctRing(worst.wr)}`
-    : '';
-
-  renderDayChart(rows);
-}
-
-/* O bara de win rate pe fiecare zi; ziua fara tradeuri primeste doar un punct. */
-function renderDayChart(rows) {
-  const svg = document.getElementById('dayChart');
-  const wrap = document.getElementById('dayWrap');
-  const tip = document.getElementById('dayTip');
-  svg.innerHTML = '';
-
-  const W = wrap.clientWidth || 900;
-  const H = 168;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('height', H);
-
-  const m = { t: 18, r: 8, b: 26, l: 48 };
-  const iw = W - m.l - m.r, ih = H - m.t - m.b;
-  const Y = v => m.t + ih - (v / 100) * ih;
-  const step = iw / (rows.length || 1);
-  const bw = Math.min(44, Math.max(8, step - 18));
-  const todayIdx = weekdayIndex(today());
-
-  [0, 50, 100].forEach(v => {
-    svg.appendChild(el('line', {
-      x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v),
-      stroke: v === 0 ? 'var(--hairline-2)' : 'var(--grid)', 'stroke-width': 1
-    }));
-    svg.appendChild(el('text', {
-      x: m.l - 10, y: Y(v) + 4, 'text-anchor': 'end', fill: 'var(--text-3)', 'font-size': 10.5
-    }, v + '%'));
-  });
-
-  rows.forEach((r, i) => {
-    const wr = winRate(r);
-    const cx = m.l + step * i + step / 2;
-    const y0 = Y(0);
-
-    if (wr === null) {
-      svg.appendChild(el('circle', { cx, cy: y0, r: 1.5, fill: 'var(--grid)' }));
-    } else {
-      const h = Math.max(y0 - Y(wr), 2);
-      svg.appendChild(el('path', {
-        d: barPath(cx - bw / 2, y0 - h, bw, h, 4, true),
-        fill: wr >= 50 ? 'var(--good)' : wr >= 35 ? 'var(--warn)' : 'var(--bad)',
-        opacity: r.count >= DAY_MIN_TRADES ? 1 : 0.45
-      }));
-      svg.appendChild(el('text', {
-        x: cx, y: y0 - h - 6, 'text-anchor': 'middle',
-        fill: 'var(--text-2)', 'font-size': 10.5
-      }, num(wr, 0) + '%'));
-    }
-
-    svg.appendChild(el('text', {
-      x: cx, y: H - 9, 'text-anchor': 'middle',
-      fill: r.idx === todayIdx ? 'var(--text-1)' : 'var(--text-3)', 'font-size': 10
-    }, DOW[r.idx]));
-
-    const hit = el('rect', { x: cx - step / 2, y: m.t, width: step, height: ih, fill: 'transparent' });
-    svg.appendChild(hit);
-    hit.addEventListener('mousemove', ev => showTip(tip, ev,
-      `<div><b>${r.key}</b></div>` +
-      (r.count
-        ? `<div>Win rate <b>${num(wr, 0)}%</b></div>` +
-          `<div class="t-sub">${r.count} trade${r.count === 1 ? '' : 's'} · ${breakdown(r)}</div>` +
-          (r.funded
-            ? `<div class="t-sub">Net <b class="${pnlClass(r.pnl)}">${money(r.pnl, { signed: true })}</b></div>`
-            : '')
-        : '<div class="t-sub">No trades</div>')));
-    hit.addEventListener('mouseleave', () => tip.classList.remove('on'));
-  });
 }
 
 /* ------------------------------------------------- rezultatele pe luni
@@ -2456,7 +2293,7 @@ function submitForm(ev) {
 
 /* ---------------------------------------------------------------- rutare */
 
-const ROUTES = ['dashboard', 'trades', 'strategy', 'days', 'months', 'calendar', 'accounts'];
+const ROUTES = ['dashboard', 'trades', 'strategy', 'months', 'calendar', 'accounts'];
 
 /* Hash-ul poate fi "#accounts" (lista) sau "#accounts/<id>" (un cont deschis). */
 function currentRoute() {
@@ -2476,7 +2313,6 @@ function applyRoute() {
     a.classList.toggle('on', a.dataset.route === r));
   // graficul are nevoie de latimea reala, pe care o stie doar cand e vizibil
   if (r === 'dashboard') renderDaily();
-  if (r === 'days') renderDays();
   if (r === 'calendar') renderCalendar();
   if (r === 'accounts') {
     const id = currentAccountId();
@@ -2520,8 +2356,7 @@ function bind() {
   document.getElementById('mPnl').oninput = updatePnlPreview;
 
   // comutatoarele de perioada din sectiunile de defalcare
-  [['pairScope', renderBreakdowns], ['reasonScope', renderBreakdowns],
-    ['dayScope', renderDays]].forEach(([id, draw]) => {
+  [['pairScope', renderBreakdowns], ['reasonScope', renderBreakdowns]].forEach(([id, draw]) => {
     document.getElementById(id).onclick = e => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -2701,13 +2536,14 @@ function startApp() {
 
   applyRoute();
   renderClock();
-  renderTimeline();
+  renderSessions();
   render();
 
   if (!window.__ticker) {
     window.__ticker = setInterval(() => {
       renderClock();
-      if (++ticks % 5 === 0) renderTimeline();
+      renderHands();
+      if (++ticks % 5 === 0) renderSessions();
     }, 1000);
   }
 }

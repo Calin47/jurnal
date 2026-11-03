@@ -1730,6 +1730,11 @@ function monthRows() {
   });
 }
 
+const monthName = ym => new Date(ym + '-15T12:00:00')
+  .toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+let monthSelected = null;
+
 function renderMonths() {
   const rows = monthRows();
   const signedR = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v), 2) + 'R';
@@ -1738,9 +1743,9 @@ function renderMonths() {
     ? `<small class="cell-note">${n} of ${total} trade${total === 1 ? '' : 's'}</small>` : '';
 
   document.getElementById('monthRows').innerHTML = rows.map(r =>
-    `<tr>` +
-    `<td class="l"><span class="bd-name">${new Date(r.ym + '-15T12:00:00')
-      .toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</span></td>` +
+    `<tr class="month-row${r.ym === monthSelected ? ' on' : ''}" data-month="${r.ym}" ` +
+    `tabindex="0" role="button" aria-expanded="${r.ym === monthSelected}">` +
+    `<td class="l"><span class="bd-name">${monthName(r.ym)}</span></td>` +
     `<td>${r.count}</td>` +
     `<td class="c-tp">${r.TP || '—'}</td>` +
     `<td class="c-sl">${r.SL || '—'}</td>` +
@@ -1751,6 +1756,39 @@ function renderMonths() {
     `${r.rCount ? signedR(r.r) : '—'}${partial(r.rCount, r.count)}</td>` +
     `</tr>`).join('');
   document.getElementById('monthEmpty').hidden = rows.length > 0;
+  renderMonthDetail();
+}
+
+/* Tradeurile lunii alese, despartite pe rezultat si in ordine cronologica. */
+function renderMonthDetail() {
+  const card = document.getElementById('monthDetail');
+  const list = monthSelected ? trades.filter(t => t.date.slice(0, 7) === monthSelected) : [];
+  if (!list.length) { monthSelected = null; card.hidden = true; return; }
+
+  const t = tally(list);
+  card.hidden = false;
+  document.getElementById('monthDetailTitle').textContent = monthName(monthSelected);
+  document.getElementById('monthDetailSub').innerHTML =
+    `${t.count} trade${t.count === 1 ? '' : 's'} · ${breakdown(t)}`;
+
+  const when = x => x.date + (x.entryTime || '');
+  document.getElementById('monthDetailRows').innerHTML = ['TP', 'SL', 'BE'].map(res => {
+    const group = list.filter(x => x.outcome === res)
+      .sort((a, b) => when(a).localeCompare(when(b)));
+    if (!group.length) return '';
+    const g = tally(group);
+    return `<tr class="month-group"><td class="l c-${res.toLowerCase()}" colspan="13">` +
+      `${res} · ${g.count} trade${g.count === 1 ? '' : 's'}` +
+      (g.funded ? ` · <span class="${pnlClass(g.pnl)}">${money(g.pnl, { signed: true })}</span>` : '') +
+      `</td></tr>` + group.map(tradeRowHtml).join('');
+  }).join('');
+}
+
+function selectMonth(ym) {
+  monthSelected = monthSelected === ym ? null : ym;
+  renderMonths();
+  const card = document.getElementById('monthDetail');
+  if (monthSelected && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /* ------------------------------------------------------- conturi prop firm */
@@ -2471,6 +2509,25 @@ function bind() {
   });
   document.getElementById('lightbox').onclick = () =>
     document.getElementById('lightbox').classList.remove('on');
+
+  const monthsBody = document.getElementById('monthRows');
+  monthsBody.onclick = e => {
+    const row = e.target.closest('.month-row');
+    if (row) selectMonth(row.dataset.month);
+  };
+  monthsBody.onkeydown = e => {
+    const row = e.target.closest('.month-row');
+    if (!row || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    selectMonth(row.dataset.month);
+  };
+  document.getElementById('monthDetailClose').onclick = () => selectMonth(monthSelected);
+  document.getElementById('monthDetailRows').onclick = e => {
+    const img = e.target.closest('.zoom');
+    if (img) { openLightbox(img.getAttribute('src')); return; }
+    const b = e.target.closest('.edit-btn');
+    if (b) openModal(b.dataset.id);
+  };
 
   document.getElementById('tradesBody').onclick = e => {
     const img = e.target.closest('.zoom');

@@ -977,6 +977,11 @@ table.bd tbody tr.off td { color: var(--text-3); }
 
 .bd-split { width: 128px; min-width: 128px; }
 
+.month-row { cursor: pointer; }
+table.bd tbody tr.month-row.on td { background: var(--surface-2); }
+.month-row:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+.month-group td { padding-top: 16px; font-weight: 700; font-size: 12px; }
+
 .cell-note { display: block; font-size: 11px; font-weight: 400; color: var(--text-3); }
 
 .mini-prop {

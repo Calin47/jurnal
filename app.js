@@ -92,6 +92,17 @@ function sizeLabel(size) {
 /* Banii exista doar pe conturile de prop firm. */
 const isFunded = t => !!t.accountId;
 
+/* RR-ul nu se mai scrie de mana: vine din rezultat, si pe tradeurile vechi. Valoarea
+   scrisa odinioara ramane in date, dar nu se mai foloseste. */
+const R_BY_OUTCOME = { TP: 2, SL: -2, BE: 0 };
+const tradeR = t => (t.outcome in R_BY_OUTCOME ? R_BY_OUTCOME[t.outcome] : null);
+const signedR = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v), 0) + 'R';
+
+function rCell(t) {
+  const r = tradeR(t);
+  return `<td class="${pnlClass(r)}">${r === null ? '—' : signedR(r)}</td>`;
+}
+
 /* Salvarea poate esua daca localStorage e plin (o poza prea mare). */
 function saveTrades() {
   try {
@@ -1613,7 +1624,7 @@ function renderCalDay() {
     `<td class="l">${(x.reasons || []).map(r => `<span class="tag">${escapeHtml(r)}</span>`).join('') || '—'}</td>` +
     `<td class="l"><span class="badge ${x.outcome.toLowerCase()}">${x.outcome}</span></td>` +
     moneyCell(x) +
-    `<td class="${pnlClass(x.r)}">${x.r === null || x.r === undefined ? '—' : num(x.r, 2) + 'R'}</td>` +
+    rCell(x) +
     `</tr>`).join('');
 }
 
@@ -1711,8 +1722,7 @@ function renderBreakdowns() {
 }
 
 /* ------------------------------------------------- rezultatele pe luni
-   O linie pe fiecare luna in care a tranzactionat, cea mai noua prima. R-ul se
-   scrie de mana si e optional, deci suma lui merge doar pe tradeurile care il au. */
+   O linie pe fiecare luna in care a tranzactionat, cea mai noua prima. */
 
 function monthRows() {
   const map = new Map();
@@ -1723,10 +1733,8 @@ function monthRows() {
   });
   return [...map.keys()].sort().reverse().map(ym => {
     const list = map.get(ym);
-    const withR = list.filter(t => Number.isFinite(t.r));
-    // rotunjit, ca 0.1 + 0.2 sa nu iasa pe plus de la virgula
-    const r = Math.round(withR.reduce((s, t) => s + t.r, 0) * 100) / 100;
-    return Object.assign({ ym, r, rCount: withR.length }, tally(list));
+    const r = list.reduce((s, t) => s + (tradeR(t) || 0), 0);
+    return Object.assign({ ym, r }, tally(list));
   });
 }
 
@@ -1737,7 +1745,6 @@ let monthSelected = null;
 
 function renderMonths() {
   const rows = monthRows();
-  const signedR = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v), 2) + 'R';
   // spune cand suma nu acopera toate tradeurile lunii
   const partial = (n, total) => n < total
     ? `<small class="cell-note">${n} of ${total} trade${total === 1 ? '' : 's'}</small>` : '';
@@ -1752,8 +1759,7 @@ function renderMonths() {
     `<td class="c-be">${r.BE || '—'}</td>` +
     `<td class="${r.funded ? pnlClass(r.pnl) : 'muted'}">` +
     `${r.funded ? money(r.pnl, { signed: true }) : '—'}${partial(r.funded, r.count)}</td>` +
-    `<td class="${r.rCount ? pnlClass(r.r) : 'muted'}">` +
-    `${r.rCount ? signedR(r.r) : '—'}${partial(r.rCount, r.count)}</td>` +
+    `<td class="${pnlClass(r.r)}">${signedR(r.r)}</td>` +
     `</tr>`).join('');
   document.getElementById('monthEmpty').hidden = rows.length > 0;
   renderMonthDetail();
@@ -1905,7 +1911,7 @@ function tradeRowHtml(t) {
     `<td class="l">${(t.reasons || []).map(r => `<span class="tag">${escapeHtml(r)}</span>`).join('') || '—'}</td>` +
     `<td class="l"><span class="badge ${t.outcome.toLowerCase()}">${t.outcome}</span></td>` +
     moneyCell(t) +
-    `<td class="${pnlClass(t.r)}">${t.r === null || t.r === undefined ? '—' : num(t.r, 2) + 'R'}</td>` +
+    rCell(t) +
     `<td class="l">${t.image ? `<img class="thumb zoom" src="${escapeHtml(t.image)}" alt="chart">` : '—'}</td>` +
     `<td><button class="btn icon edit-btn" data-id="${t.id}">Edit</button></td>` +
     `</tr>`;
@@ -2094,7 +2100,7 @@ function renderTable() {
     `<td class="l">${(t.reasons || []).map(r => `<span class="tag">${escapeHtml(r)}</span>`).join('') || '—'}</td>` +
     `<td class="l"><span class="badge ${t.outcome.toLowerCase()}">${t.outcome}</span></td>` +
     moneyCell(t) +
-    `<td class="${pnlClass(t.r)}">${t.r === null || t.r === undefined ? '—' : num(t.r, 2) + 'R'}</td>` +
+    rCell(t) +
     `<td class="l">${t.image ? `<img class="thumb zoom" src="${escapeHtml(t.image)}" alt="chart">` : '—'}</td>` +
     `<td><button class="btn icon edit-btn" data-id="${t.id}">Edit</button></td>` +
     `</tr>`
@@ -2175,6 +2181,8 @@ function setOutcome(v) {
     b.classList.toggle('on', b.dataset.outcome === v));
   const pnl = document.getElementById('mPnl');
   if (v === 'BE' && pnl.value.trim() === '') pnl.value = '0';
+  const r = tradeR({ outcome: v });
+  document.getElementById('mR').value = r === null ? '' : signedR(r);
   updatePnlPreview();
 }
 
@@ -2245,7 +2253,6 @@ function openModal(id, acctId) {
   set('mExit', t ? t.exitPrice : '');
   set('mExitTime', t ? t.exitTime : '');
   set('mPnl', t ? t.pnl : '');
-  set('mR', t ? t.r : '');
   set('mNotes', t ? t.notes : '');
   set('mImageUrl', t && t.image && !/^data:/.test(t.image) ? t.image : '');
 
@@ -2311,7 +2318,7 @@ function submitForm(ev) {
     outcome: form.outcome,
     accountId: form.accountId,
     pnl: funded ? pnl : null,
-    r: numOrNull('mR'),
+    r: tradeR({ outcome: form.outcome }),
     notes: document.getElementById('mNotes').value.trim(),
     image: /^data:/.test(form.image) ? form.image : (urlField || form.image || '')
   };

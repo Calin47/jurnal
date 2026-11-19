@@ -61,6 +61,7 @@ function load() {
   try { trades = JSON.parse(localStorage.getItem(TRADES_KEY)) || []; } catch (e) { trades = []; }
   try { accounts = JSON.parse(localStorage.getItem(ACCOUNTS_KEY)) || []; } catch (e) { accounts = []; }
   try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch (e) { /* default */ }
+  resolveImageRefs();
 
   // tradeurile din forma veche (symbol + time) trec pe campurile noi
   trades.forEach(t => {
@@ -103,10 +104,112 @@ function rCell(t) {
   return `<td class="${pnlClass(r)}">${r === null ? '—' : signedR(r)}</td>`;
 }
 
+/* ---------------------------------------------------------------- poze
+
+   localStorage are ~5MB pe tot site-ul, iar pozele umpleau tot (eroarea
+   "Browser storage is full"). Pozele stau acum in IndexedDB, care are sute de MB.
+   In memorie tradeul tine poza intreaga (data:...), deci afisarea, backupul si
+   serverul merg ca inainte; in localStorage ajunge doar o trimitere "idb:<id>".
+   Fara IndexedDB (unele ferestre private, teste) pozele raman inline, ca inainte. */
+const IMG_DB = 'tj2.images';
+const IMG_STORE = 'images';
+const IMG_REF = 'idb:';
+const imageCache = new Map();   // id trade -> data URL deja scris in IndexedDB
+let imgDbPromise = null;
+let imgDbOk = false;
+let imgWrites = Promise.resolve(true);
+
+function openImageDb() {
+  if (imgDbPromise) return imgDbPromise;
+  imgDbPromise = new Promise(resolve => {
+    try {
+      if (typeof indexedDB === 'undefined' || !indexedDB) { resolve(null); return; }
+      const req = indexedDB.open(IMG_DB, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(IMG_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+  return imgDbPromise;
+}
+
+function imageTx(mode, work) {
+  return openImageDb().then(db => new Promise(resolve => {
+    if (!db) { resolve(null); return; }
+    try {
+      const tx = db.transaction(IMG_STORE, mode);
+      const out = work(tx.objectStore(IMG_STORE));
+      tx.oncomplete = () => resolve(out && 'result' in out ? out.result : true);
+      tx.onerror = tx.onabort = () => resolve(null);
+    } catch (e) { resolve(null); }
+  }));
+}
+
+const isDataImage = v => typeof v === 'string' && v.startsWith('data:');
+const isImageRef = v => typeof v === 'string' && v.startsWith(IMG_REF);
+
+/* Pune pozele inapoi in tradeuri dupa ce load() a citit trimiterile din localStorage. */
+function resolveImageRefs() {
+  trades.forEach(t => {
+    if (isImageRef(t.image) && imageCache.has(t.image.slice(IMG_REF.length))) {
+      t.image = imageCache.get(t.image.slice(IMG_REF.length));
+    }
+  });
+}
+
+/* La pornire: citeste pozele din IndexedDB si muta acolo pozele vechi din
+   localStorage, ca sa elibereze loc. */
+function loadImages() {
+  return imageTx('readonly', store => {
+    const keys = store.getAllKeys();
+    const vals = store.getAll();
+    return { get result() { return { keys: keys.result || [], vals: vals.result || [] }; } };
+  }).then(r => {
+    if (!r) return;
+    imgDbOk = true;
+    r.keys.forEach((k, i) => imageCache.set(k, r.vals[i]));
+    resolveImageRefs();
+    if (trades.some(t => isDataImage(t.image) && imageCache.get(t.id) !== t.image)) {
+      saveTrades();
+      return imgWrites;
+    }
+  });
+}
+
+/* Scrie in IndexedDB pozele noi sau schimbate si sterge pe cele fara trade. */
+function syncImages() {
+  if (!imgDbOk) return;
+  const want = new Map();
+  trades.forEach(t => { if (isDataImage(t.image)) want.set(t.id, t.image); });
+  const keep = new Set(trades.filter(t => isImageRef(t.image)).map(t => t.image.slice(IMG_REF.length)));
+  const puts = [...want].filter(([id, url]) => imageCache.get(id) !== url);
+  const dels = [...imageCache.keys()].filter(id => !want.has(id) && !keep.has(id));
+  if (!puts.length && !dels.length) return;
+  puts.forEach(([id, url]) => imageCache.set(id, url));
+  dels.forEach(id => imageCache.delete(id));
+  const write = imageTx('readwrite', store => {
+    puts.forEach(([id, url]) => store.put(url, id));
+    dels.forEach(id => store.delete(id));
+  }).then(ok => {
+    if (!ok) puts.forEach(([id]) => imageCache.delete(id));
+    return !!ok;
+  });
+  imgWrites = imgWrites.then(() => write);
+}
+
+/* Ce se scrie in localStorage: pozele inlocuite cu trimiteri. */
+function tradesForStorage() {
+  if (!imgDbOk) return trades;
+  return trades.map(t => (isDataImage(t.image) && imageCache.get(t.id) === t.image
+    ? Object.assign({}, t, { image: IMG_REF + t.id }) : t));
+}
+
 /* Salvarea poate esua daca localStorage e plin (o poza prea mare). */
 function saveTrades() {
+  syncImages();
   try {
-    localStorage.setItem(TRADES_KEY, JSON.stringify(trades));
+    localStorage.setItem(TRADES_KEY, JSON.stringify(tradesForStorage()));
   } catch (e) {
     /* localStorage plin (de obicei o poza prea mare). In mod local asta e o
        eroare adevarata; cu server, memoria locala e doar o copie, deci mergem
@@ -1912,7 +2015,7 @@ function tradeRowHtml(t) {
     `<td class="l"><span class="badge ${t.outcome.toLowerCase()}">${t.outcome}</span></td>` +
     moneyCell(t) +
     rCell(t) +
-    `<td class="l">${t.image ? `<img class="thumb zoom" src="${escapeHtml(t.image)}" alt="chart">` : '—'}</td>` +
+    `<td class="l">${t.image && !isImageRef(t.image) ? `<img class="thumb zoom" src="${escapeHtml(t.image)}" alt="chart">` : '—'}</td>` +
     `<td><button class="btn icon edit-btn" data-id="${t.id}">Edit</button></td>` +
     `</tr>`;
 }
@@ -2101,7 +2204,7 @@ function renderTable() {
     `<td class="l"><span class="badge ${t.outcome.toLowerCase()}">${t.outcome}</span></td>` +
     moneyCell(t) +
     rCell(t) +
-    `<td class="l">${t.image ? `<img class="thumb zoom" src="${escapeHtml(t.image)}" alt="chart">` : '—'}</td>` +
+    `<td class="l">${t.image && !isImageRef(t.image) ? `<img class="thumb zoom" src="${escapeHtml(t.image)}" alt="chart">` : '—'}</td>` +
     `<td><button class="btn icon edit-btn" data-id="${t.id}">Edit</button></td>` +
     `</tr>`
   ).join('');
@@ -2328,6 +2431,18 @@ function submitForm(ev) {
   if (!saveTrades()) {
     trades = before;
     err.textContent = 'Browser storage is full — the image is too big. Use a smaller screenshot or paste a link instead.';
+    return;
+  }
+  if (imgDbOk && isDataImage(t.image)) {
+    // poza se scrie in IndexedDB; formularul se inchide doar dupa ce a ajuns acolo
+    imgWrites.then(() => {
+      render();
+      if (imageCache.get(t.id) !== t.image) {
+        err.textContent = 'The trade was saved, but the browser refused to store the image. Try again, or paste a link instead.';
+        return;
+      }
+      closeModal();
+    });
     return;
   }
   closeModal();
@@ -2660,6 +2775,11 @@ bindAuth();
    cere o cerere de retea - deci pornirea e asincrona. In mod local ramane
    instantanee, ca inainte. */
 function boot() {
+  if (typeof indexedDB === 'undefined' || !indexedDB) return bootApp();
+  return loadImages().catch(() => {}).then(bootApp);
+}
+
+function bootApp() {
   renderSyncChip(cloudOn() ? 'saving' : 'local');
   if (!cloudOn()) {
     if (isSignedIn()) startApp(); else showAuth();
